@@ -4,7 +4,7 @@ from time import sleep, time
 import struct
 
 class MultiWii(object):
-	__VERSION__ = "0.0.3"
+	__VERSION__ = "0.0.4"
 	__AUTHOR__ = "Jonathan Dean (ke4ukz@gmx.com)"
 	#Instance variables:
 	#	_port: serial.Serial object
@@ -22,6 +22,7 @@ class MultiWii(object):
 		MSP_ADJUSTMENT_RANGES = 52
 		MSP_SET_ADJUSTMENT_RANGE = 53
 		MSP_IDENT = 100
+		MSP_STATUS = 101
 		MSP_RAW_IMU = 102
 		MSP_MOTOR = 104
 		MSP_RC = 105
@@ -33,6 +34,7 @@ class MultiWii(object):
 		MSP_BOXNAMES = 116
 		MSP_BOXIDS = 119
 		MSP_SET_RAW_RC = 200
+		MSP_SET_HEAD = 211
 	#end class MSPCOMMANDS
 
 	class MSPSTATES:
@@ -51,6 +53,7 @@ class MultiWii(object):
 		#end def __init__
 	#end class MSPResponse
 
+# construction/destruction #################################################################################
 	def __init__(self):
 		self._port = Serial()
 		self._monitorThread = Thread(target=self._monitorSerialPort)
@@ -64,7 +67,6 @@ class MultiWii(object):
 			self._exitNow.set()
 		elif self._port.isOpen():
 			self._port.close()
-
 
 # Byte<->Int functions #################################################################################
 	def _toInt16(self, data):
@@ -111,7 +113,7 @@ class MultiWii(object):
 		return struct.unpack("<BBBB", struct.pack("@I", value))
 	#end def _fromUInt32
 
-# command processing methods
+# command processing methods #################################################################################
 	def _monitorSerialPort(self):
 		state = self.MSPSTATES.IDLE
 		data = bytearray()
@@ -327,6 +329,52 @@ class MultiWii(object):
 		#end if
 		return {"altitude":alt, "vari":vari}
 	#end def getAltitude
+
+	def getGPS(self):
+		gpsFix = 0
+		gpsNumSat = 0
+		gpsLat = 0
+		gpsLong = 0
+		gpsAltitude = 0
+		gpsSpeed = 0
+		gpsCourse = 0
+		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_RAW_GPS)):
+			rdata = self.responses[self.MSPCOMMMANDS.MSP_RAW_GPS].data
+			if (len(rdata) == 16):
+				gpsFix = rdata[0]
+				gpsNumSat = rdata[1]
+				gpsLat = self._toUInt32(rdata[2:6])
+				gpsLong = self._toUInt32(rdata[6:10])
+				gpsAltitude = self._toUInt16(rdata[10:12])
+				gpsSpeed = self._toUInt16(rdata[12:14])
+				gpsCourse = self._toUInt16(rdata[14:16])
+			#end if
+			del self.responses[self.MSPCOMMMANDS.MSP_RAW_GPS]
+		#end if
+		return {"fix":gpsFix, "numsat":gpsNumSat, "latitude":gpsLat, "longitude":gpsLong,
+				"altitude":gpsAltitude, "speed":gpsSpeed, "course":gpsCourse}
+	#end def getGPS
+
+	def getStatus(self):
+		cycletime=0
+		i2cerrorcount=0
+		sensor=0
+		flag=0
+		currentset=0
+		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_STATUS)):
+			rdata = self.responses[self.MSPCOMMMANDS.MSP_STATUS].data
+			if (len(rdata) == 11):
+				cycletime = self._toUInt16(rdata[0:2])
+				i2cerrorcount = self._toUInt16(rdata[2:4])
+				sensor = self._toUInt16(rdata[4:6])
+				flag = self._toUInt32(rdata[6:10])
+				currentset = rdata[10]
+			#end if
+			del self.responses[self.MSPCOMMMANDS.MSP_STATUS]
+		#end if
+		return {"cycletime":cycletime, "i2cerrorcount":i2cerrorcount, "sensor":sensor, "flag":flag, "currentset":currentset}
+	#end def getStatus
+
 # set* methods #################################################################################
 	def setRC(self, values):
 		data = bytearray()
@@ -383,6 +431,14 @@ class MultiWii(object):
 			self.setRC(rc)
 		#end if
 	#def setAux
+
+	def setHeading(self, value):
+		data = bytearray()
+		r = self._fromInt16(value)
+		data.append(r[0])
+		data.append(r[1])
+		self._sendAndWait(self.MSPCOMMMANDS.MSP_SET_HEAD, data)
+	#end def setHeading
 
 # connection methods #################################################################################
 	def disconnect(self):

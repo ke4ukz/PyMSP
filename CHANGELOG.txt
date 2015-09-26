@@ -26,3 +26,7 @@ v0.0.3
 	ADD setRC: set new RC values
 	ADD setThrottle: set only throttle to new value
 	ADD setAux: set specified Aux channel to new value
+v0.0.4
+	ADD setHeading: set the follow-heading (not sure what it does...)
+	ADD getGPS: get GPS coordinates and other data
+	ADD getStatus: get general flight controller status information
