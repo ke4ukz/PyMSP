@@ -1,6 +1,7 @@
 ﻿from serial import Serial
 from threading import Thread, Event
 from time import sleep, time
+import struct
 
 class MultiWii(object):
 	__VERSION__ = "0.0.2"
@@ -57,6 +58,27 @@ class MultiWii(object):
 		self.responses = {}
 		self.responseTimeout = 3
 	#end def __init__
+
+	def _toInt16(self, data):
+		if (len(data) == 2):
+			return struct.unpack("@h", struct.pack("<BB", data[0], data[1]))
+		else:
+			return None
+	#end def _toInt16
+
+	def _toUInt16(self, data):
+		if (len(data) == 2):
+			return struct.unpack("@H", struct.pack("<BB", data[0], data[1]))
+		else:
+			return None
+	#end def _toUInt16
+
+	def _toUInt32(self, data):
+		if (len(data) == 4):
+			return struct.unpack("@I", struct.pack("<BBBB", data[0], data[1], data[2], data[3]))
+		else:
+			return None
+	#end def _toUInt32
 
 	def _monitorSerialPort(self):
 		state = self.MSPSTATES.IDLE
@@ -169,16 +191,33 @@ class MultiWii(object):
 		quadType = 0
 		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_IDENT)):
 			rdata = self.responses[self.MSPCOMMMANDS.MSP_IDENT].data
-			mspVersion = rdata[0]
-			quadType = rdata[1]
+			if (len(rdata) == 7):
+				mspVersion = rdata[0]
+				quadType = rdata[1]
 			del self.responses[self.MSPCOMMMANDS.MSP_IDENT]
 		#end if
 		return {"version":mspVersion, "type":quadType}
 	#end def getIdent
 	
+	def getAttitude(self):
+		angx = 0
+		angy = 0
+		heading = 0
+		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_ATTITUDE)):
+			rdata = self.responses[self.MSPCOMMMANDS.MSP_ATTITUDE].data
+			if (len(rdata) == 6):
+				angx = self._toInt16(rdata[0:2])
+				angy = self._toInt16(rdata[2:4])
+				heading = self._toInt16(rdata[4:6])
+			del self.responses[self.MSPCOMMMANDS.MSP_ATTITUDE]
+		#end if
+		return {"angx":angx, "angy":angy, "heading":heading}
+	#end def getAttitude
+
 	def disconnect(self):
 		self._exitNow.set()
 		self._monitorThread.join()
+	#end def disconnect
 
 	def connect(self, portName, baudRate):
 		try:
@@ -195,4 +234,5 @@ class MultiWii(object):
 		except Exception as ex:
 			print("Error starting thread: " + str(ex))
 			return False
-
+		#end try
+	#end def connect
