@@ -1,2 +1,10 @@
 v0.0.1
 	Making sure serial monitor thread starts and stops
+v0.0.2
+	ADD serial port connection functionality
+	ADD responses: dictionary of {command, MSPResponse} to keep track of data for a given command's response as well as a flag (finished) to notify when the data has arrived
+	ADD responsesTimeout: seconds to wait for a response before giving up
+	ADD _sendCommand: sends a command and optional data (adds new item to responses dictionary)
+	ADD _waitForResponse: waits for a response for a given command (keeps checking responses dictionary for finished=true)
+	ADD _sendAndWait: calls _sendCommand and then _waitForResponse
+	ADD _processCommand: adds (or updates) the data for the specified command and sets finished=true
