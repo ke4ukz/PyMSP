@@ -4,7 +4,7 @@ from time import sleep, time
 import struct
 
 class MultiWii(object):
-	__VERSION__ = "0.0.2"
+	__VERSION__ = "0.0.3"
 	__AUTHOR__ = "Jonathan Dean (ke4ukz@gmx.com)"
 	#Instance variables:
 	#	_port: serial.Serial object
@@ -59,27 +59,59 @@ class MultiWii(object):
 		self.responseTimeout = 3
 	#end def __init__
 
+	def __del__(self):
+		if self._monitorThread.isAlive():
+			self._exitNow.set()
+		elif self._port.isOpen():
+			self._port.close()
+
+
+# Byte<->Int functions #################################################################################
 	def _toInt16(self, data):
 		if (len(data) == 2):
-			return struct.unpack("@h", struct.pack("<BB", data[0], data[1]))
+			return struct.unpack("@h", struct.pack("<BB", data[0], data[1]))[0]
 		else:
 			return None
 	#end def _toInt16
 
 	def _toUInt16(self, data):
 		if (len(data) == 2):
-			return struct.unpack("@H", struct.pack("<BB", data[0], data[1]))
+			return struct.unpack("@H", struct.pack("<BB", data[0], data[1]))[0]
 		else:
 			return None
 	#end def _toUInt16
 
+	def _toInt32(self, data):
+		if (len(data) == 4):
+			return struct.unpack("@i", struct.pack("<BBBB", data[0], data[1], data[2], data[3]))[0]
+		else:
+			return None
+	#end def _toInt32
+
 	def _toUInt32(self, data):
 		if (len(data) == 4):
-			return struct.unpack("@I", struct.pack("<BBBB", data[0], data[1], data[2], data[3]))
+			return struct.unpack("@I", struct.pack("<BBBB", data[0], data[1], data[2], data[3]))[0]
 		else:
 			return None
 	#end def _toUInt32
 
+	def _fromInt16(self, value):
+		return struct.unpack("<BB", struct.pack("@h", value))
+	#end def _fromInt16
+
+	def _fromUInt16(self, value):
+		return struct.unpack("<BB", struct.pack("@H", value))
+	#end def _fromUInt16
+
+	def _fromInt32(self, value):
+		return struct.unpack("<BBBB", struct.pack("@i", value))
+	#end def _fromInt32
+
+	def _fromUInt32(self, value):
+		return struct.unpack("<BBBB", struct.pack("@I", value))
+	#end def _fromUInt32
+
+# command processing methods
 	def _monitorSerialPort(self):
 		state = self.MSPSTATES.IDLE
 		data = bytearray()
@@ -186,6 +218,7 @@ class MultiWii(object):
 			return False
 	#end def _sendAndWait
 
+# get* methods #################################################################################
 	def getIdent(self):
 		mspVersion = 0
 		quadType = 0
@@ -209,11 +242,149 @@ class MultiWii(object):
 				angx = self._toInt16(rdata[0:2])
 				angy = self._toInt16(rdata[2:4])
 				heading = self._toInt16(rdata[4:6])
+			#end if
 			del self.responses[self.MSPCOMMMANDS.MSP_ATTITUDE]
 		#end if
 		return {"angx":angx, "angy":angy, "heading":heading}
 	#end def getAttitude
 
+	def getIMU(self):
+		acc = [0,0,0]
+		gyr = [0,0,0]
+		mag = [0,0,0]
+		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_RAW_IMU)):
+			rdata = self.responses[self.MSPCOMMMANDS.MSP_RAW_IMU].data
+			if (len(rdata) == 18):
+				acc[0] = self._toInt16(rdata[0:2])
+				acc[1] = self._toInt16(rdata[2:4])
+				acc[2] = self._toInt16(rdata[4:6])
+				gyr[0] = self._toInt16(rdata[6:8])
+				gyr[1] = self._toInt16(rdata[8:10])
+				gyr[2] = self._toInt16(rdata[10:12])
+				mag[0] = self._toInt16(rdata[12:14])
+				mag[1] = self._toInt16(rdata[14:16])
+				mag[2] = self._toInt16(rdata[16:18])
+			#end if
+			del self.responses[self.MSPCOMMMANDS.MSP_RAW_IMU]
+		#end if
+		return {"accx":acc[0], "accy":acc[1], "accz":acc[2],
+				"gyrx":gyr[0], "gyry":gyr[1], "gyrz":gyr[2],
+				"magx":mag[0], "magy":mag[1], "magz":mag[2]}
+	#end def getIMU
+
+	def getRC(self):
+		pitch = 0
+		roll = 0
+		yaw = 0
+		throttle = 0
+		aux = [0,0,0,0]
+		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_RC)):
+			rdata = self.responses[self.MSPCOMMMANDS.MSP_RC].data
+			if (len(rdata) >= 8):
+				pitch = self._toUInt16(rdata[0:2])
+				roll = self._toUInt16(rdata[2:4])
+				yaw = self._toUInt16(rdata[4:6])
+				throttle = self._toUInt16(rdata[6:8])
+				for i in range(0, 3):
+					if (len(rdata) >= (10 + 2 * i)):
+						aux[i] = self._toUInt16(rdata[8+2*i:10+2*i])
+				#end for
+			#end if
+			del self.responses[self.MSPCOMMMANDS.MSP_RC]
+		#end if
+		return {"pitch":pitch, "roll":roll, "yaw":yaw, "throttle":throttle,
+				"aux1":aux[0], "aux2":aux[1], "aux3":aux[2], "aux4":aux[3]}
+	#end def getRC
+
+	def getAnalog(self):
+		vbat = 0
+		pms = 0
+		rssi = 0
+		amperage = 0
+		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_ANALOG)):
+			rdata = self.responses[self.MSPCOMMMANDS.MSP_ANALOG].data
+			if (len(rdata) == 7):
+				vbat = rdata[0]
+				pms = self._toUInt16(rdata[1:3])
+				rssp = self._toUInt16(rdata[3:5])
+				amperage = self._toUInt16(rdata[5:7])
+			#end if
+			del self.responses[self.MSPCOMMMANDS.MSP_ANALOG]
+		#end if
+		return {"vbat":vbat, "powermetersum":pms, "rssi":rssi, "amperage":amperage}
+	#end def getAnalog
+
+	def getAltitude(self):
+		alt = 0
+		vari = 0
+		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_ALTITUDE)):
+			rdata = self.responses[self.MSPCOMMMANDS.MSP_ALTITUDE].data
+			if (len(rdata) == 6):
+				alt = self._toInt32(rdata[0:4])
+				vari = self._toInt16(rdata[4:6])
+			#end if
+			del self.responses[self.MSPCOMMMANDS.MSP_ALTITUDE]
+		#end if
+		return {"altitude":alt, "vari":vari}
+	#end def getAltitude
+# set* methods #################################################################################
+	def setRC(self, values):
+		data = bytearray()
+		throttle = 0
+		pitch = 0
+		yaw = 0
+		roll = 0
+		aux = [0,0,0,0]
+		if isinstance(values, dict):
+			if values.has_key("pitch"):
+				pitch = values["pitch"]
+			if values.has_key("roll"):
+				roll = values["roll"]
+			if values.has_key("yaw"):
+				yaw = values["yaw"]
+			if values.has_key("throttle"):
+				throttle = values["throttle"]
+			for i in range(1,4):
+				if values.has_key("aux" + str(i)):
+					aux[i-1] = values["aux" + str(i)]
+			#end for
+			r = self._fromInt16(roll)
+			data.append(r[0])
+			data.append(r[1])
+			r = self._fromInt16(pitch)
+			data.append(r[0])
+			data.append(r[1])
+			r = self._fromInt16(yaw)
+			data.append(r[0])
+			data.append(r[1])
+			r = self._fromInt16(throttle)
+			data.append(r[0])
+			data.append(r[1])
+			for i in range(0,3):
+				r = self._fromInt16(aux[i])
+				data.append(r[0])
+				data.append(r[1])
+			#end for
+			return self._sendAndWait(self.MSPCOMMMANDS.MSP_SET_RAW_RC, data)
+		else:
+			return False
+	#end def setRC
+
+	def setThrottle(self, value):
+		rc = self.getRC()
+		rc["throttle"] = value
+		self.setRC(rc)
+	#end def setThrottle
+
+	def setAux(self, channel, value):
+		if channel in range(1,4):
+			rc = self.getRC()
+			rc["aux" + str(channel)] = value
+			self.setRC(rc)
+		#end if
+	#def setAux
+
+# connection methods #################################################################################
 	def disconnect(self):
 		self._exitNow.set()
 		self._monitorThread.join()

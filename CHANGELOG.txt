@@ -9,7 +9,20 @@ v0.0.2
 	ADD _sendAndWait: calls _sendCommand and then _waitForResponse
 	ADD _processCommand: adds (or updates) the data for the specified command and sets finished=true
 v0.0.3
+	ADD __del__: stop the thread and close the serial port when object is deleted
 	ADD _toInt16: convert two bytes (bytearray) to a signed word
 	ADD _toUInt16: convert two bytes (bytearray) to an unsigned word
-	ADD _toUInt32: convert four bytes (bytearray) to an dword
+	add _toInt32: convert four bytes (bytearray) to a dword
+	ADD _toUInt32: convert four bytes (bytearray) to an unsigned dword
+	ADD _fromInt16: convert a signed word to two bytes
+	ADD _fromUInt16: convert an unsigned word to two bytes
+	ADD _fromInt32: convert a signed dword to two bytes
+	ADD _fromUInt32: convert an unsigned dword to two bytes
 	ADD getAttitude: returns three-axis attitude information
+	ADD getIMU: returns raw motion data (accelerometer, gyroscope, magnetrometer); some of these may be zero if there isn't such a sensor installed
+	ADD getRC: returns RC data (pitch, roll, yaw, throttle, and aux channels)
+	ADD getAnalog: returns analog sensor data (battery, rssi)
+	ADD getAltitude: returns estimated altitude and vertical speed (only available with an appropriate sensor)
+	ADD setRC: set new RC values
+	ADD setThrottle: set only throttle to new value
+	ADD setAux: set specified Aux channel to new value
