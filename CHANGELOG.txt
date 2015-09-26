@@ -1,0 +1,2 @@
+v0.0.1
+	Making sure serial monitor thread starts and stops
