@@ -30,3 +30,5 @@ v0.0.4
 	ADD setHeading: set the follow-heading (not sure what it does...)
 	ADD getGPS: get GPS coordinates and other data
 	ADD getStatus: get general flight controller status information
+v0.0.5
+	FIX doesn't try to join with the serial monitor thread if it is not running (that is, if the port open failed)

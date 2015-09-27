@@ -4,7 +4,7 @@ from time import sleep, time
 import struct
 
 class MultiWii(object):
-	__VERSION__ = "0.0.4"
+	__VERSION__ = "0.0.5"
 	__AUTHOR__ = "Jonathan Dean (ke4ukz@gmx.com)"
 	#Instance variables:
 	#	_port: serial.Serial object
@@ -442,8 +442,9 @@ class MultiWii(object):
 
 # connection methods #################################################################################
 	def disconnect(self):
-		self._exitNow.set()
-		self._monitorThread.join()
+		if self._monitorThread.isAlive():
+			self._exitNow.set()
+			self._monitorThread.join()
 	#end def disconnect
 
 	def connect(self, portName, baudRate):
