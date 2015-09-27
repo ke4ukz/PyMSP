@@ -4,7 +4,7 @@ from time import sleep, time
 import struct
 
 class MultiWii(object):
-	__VERSION__ = "0.0.5"
+	__VERSION__ = "0.0.6"
 	__AUTHOR__ = "Jonathan Dean (ke4ukz@gmx.com)"
 	#Instance variables:
 	#	_port: serial.Serial object
@@ -14,6 +14,7 @@ class MultiWii(object):
 	#	responseTimeout: number of seconds to wait for a response to a command (defaults to 3)
 
 	MULTITYPENAMES = {0:"Unknown", 1:"TRI", 2:"QUADP", 3:"QUADX", 4:"BI", 5:"GIMBAL", 6:"Y6", 7:"HEX6", 8:"FLYING_WING", 9:"Y4", 10:"HEX6X", 11:"OCTOX8", 12:"OCTOFLATX", 13:"OCTOFLATP", 14:"AIRPLANE", 15:"HELI_120_CCPM", 16:"HELI_90_DEG", 17:"VTAIL4", 18:"HEX6H", 19:"PPM_TO_SERVO", 20:"DUALCOPTER", 21:"SINGLECOPTER"}
+	MODERANGENAMES = {0:"ARM", 1:"ANGLE", 2:"HORIZON", 3:"BARO", 4:"Reserved", 5:"MAG", 6:"HEADFREE", 7:"HEADADJ", 8:"CAMSTAB", 9:"CAMTRIG", 10:"GPSHOME", 11:"GPSHOLD", 12:"PASSTHRU", 13:"BEEPERON", 14:"LEDMAX", 15:"LEDLOW", 16:"LLIGHTS", 17:"CALIB", 18:"GOV", 19:"OSD", 20:"TELEMETRY", 21:"AUTOTUNE", 22:"SONAR"}
 
 	class MSPCOMMMANDS:
 		MSP_NULL = 0
@@ -31,9 +32,13 @@ class MultiWii(object):
 		MSP_ALTITUDE = 109
 		MSP_ANALOG = 110
 		MSP_BOX = 113
+		MSP_MISC = 114
 		MSP_BOXNAMES = 116
 		MSP_BOXIDS = 119
 		MSP_SET_RAW_RC = 200
+		MSP_ACC_CALIBRATION = 205
+		MSP_MAG_CALIBRATION = 206
+		MSP_SET_MISC = 207
 		MSP_SET_HEAD = 211
 	#end class MSPCOMMANDS
 
@@ -52,6 +57,31 @@ class MultiWii(object):
 			self.data = []
 		#end def __init__
 	#end class MSPResponse
+
+	class MSPModeRanges:
+		ARM = 0 #Enables motors and flight stabilisation
+		ANGLE = 1 #Legacy auto-level flight mode
+		HORIZON = 2 #Auto-level flight mode
+		BARO = 3 #Altitude hold mode (Requires barometer sensor)
+		MAG = 5 #Heading lock
+		HEADFREE = 6 #Head Free - When enabled yaw has no effect on pitch/roll inputs
+		HEADADJ = 7 #Heading Adjust - Sets a new yaw origin for HEADFREE mode
+		CAMSTAB = 8 #Camera Stabilisation
+		CAMTRIG = 9
+		GPSHOME = 10 #Autonomous flight to HOME position
+		GPSHOLD = 11 #Maintain the same longitude/lattitude
+		PASSTHRU = 12 #Pass roll, yaw, and pitch directly from rx to servos in airplane mix
+		BEEPERON = 13 #Enable beeping - useful for locating a crashed aircraft
+		LEDMAX = 14
+		LEDLOW = 15
+		LLIGHTS = 16
+		CALIB = 17
+		GOV = 18
+		OSD = 19 #Enable/Disable On-Screen-Display (OSD)
+		TELEMETRY = 20 #Enable telemetry via switch
+		AUTOTUNE = 21 #Autotune Pitch/Roll PIDs
+		SONAR = 22 #Altitude hold mode (sonar sensor only)
+	#end class MSPModeRanges
 
 # construction/destruction #################################################################################
 	def __init__(self):
@@ -375,6 +405,94 @@ class MultiWii(object):
 		return {"cycletime":cycletime, "i2cerrorcount":i2cerrorcount, "sensor":sensor, "flag":flag, "currentset":currentset}
 	#end def getStatus
 
+	def getMotors(self):
+		motors = [0,0,0,0,0,0,0,0]
+		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_MOTOR)):
+			rdata = self.responses[self.MSPCOMMMANDS.MSP_MOTOR].data
+			if (len(rdata) == 16):
+				for i in range(0,7):
+					motors[i] = self._toUInt16(rdata[2*i:2*i+2])
+				#end for
+			#end if
+			del self.responses[self.MSPCOMMMANDS.MSP_MOTOR]
+		#end if
+		ret = {}
+		for i in range(0,7):
+			ret.update({"motor" + str(i+1):motors[i]})
+		#end for
+		return ret
+	#end def getMotors
+
+	def getBoxnames(self):
+		boxNames = ""
+		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_MOTOR)):
+			rdata = self.responses[self.MSPCOMMMANDS.MSP_MOTOR].data
+			boxNames = "".join(map(chr, rdata))
+			del self.responses[self.MSPCOMMMANDS.MSP_MOTOR]
+		#end if
+		return {"boxnames": boxNames}
+	#end def getBoxnames
+
+	def getModeRanges(self):
+		curID = 0
+		auxChannel = 0
+		rStart = 0
+		rEnd = 0
+		ret = {}
+		#Fill in default values in case we don't get a response, or in case the response is incomplete
+		for i in range(0, len(self.MODERANGENAMES)):
+			ret.update({self.MODERANGENAMES[i]: {"channel":0, "start":0, "end":0}})
+		#end for
+		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_MODE_RANGES)):
+			rdata = self.responses[self.MSPCOMMMANDS.MSP_MODE_RANGES].data
+			for i in range(0, len(rdata), 4):
+				curID = rdata[i]
+				auxChannel = rdata[i+1]
+				rStart = 900 + 25 * rdata[i+2]
+				rEnd = 900 + 25 * rdata[i+3]
+				ret.update({self.MSPModeRanges[curID]: {"channel":auxChannel, "start":rStart, "end":rEnd}})
+			#end for
+			del self.responses[self.MSPCOMMMANDS.MSP_MODE_RANGES]
+		#end if
+		return ret
+	#end def getModeRanges
+
+	def getMisc(self):
+		powerTrigger = 0
+		minThrottle = 0
+		maxThrottle = 0
+		minCommand = 0
+		failsafeThrottle = 0
+		armTime = 0
+		lifeTime = 0
+		magDeclination = 0
+		vBatScale = 0
+		vBatWarn1 = 0
+		vBatWarn2 = 0
+		vBatCrit = 0
+		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_MOTOR)):
+			rdata = self.responses[self.MSPCOMMMANDS.MSP_MOTOR].data
+			if len(rdata) == 22:
+				powerTrigger = self._toUInt16(rdata[0:2])
+				minThrottle = self._toUInt16(rdata[2:4])
+				maxThrottle = self._toUInt16(rdata[4:6])
+				minCommand = self._toUInt16(rdata[6:8])
+				failsafeThrottle = self._toUInt16(rdata[8:10])
+				armTime = self._toUInt16(rdata[10:12])
+				lifeTime = self._toUInt32(rdata[12:16])
+				magDeclination = self._toUInt16(rdata[16:18])
+				vBatScale = rdata[18]
+				vBatWarn1 = rdata[19]
+				vBatWarn2 = rdata[20]
+				vBatCrit = rdata[21]
+			#end if
+			del self.responses[self.MSPCOMMMANDS.MSP_MOTOR]
+		#end if
+		return {"powertrigger":powerTrigger, "minthrottle":minThrottle, "maxthrottle":maxThrottle, "mincommand":minCommand,
+				"failsafethrottle":failsafeThrottle, "armedtime":armTime, "uptime":lifeTime, "magdeclination":magDeclination,
+				"vbatscale":vBatScale, "vbatwarn1":vBatWarn1, "vbatwarn2":vBatWarn2, "vbatcrit":vBatCrit}
+	#end def getMisc
+	
 # set* methods #################################################################################
 	def setRC(self, values):
 		data = bytearray()
@@ -439,6 +557,40 @@ class MultiWii(object):
 		data.append(r[1])
 		self._sendAndWait(self.MSPCOMMMANDS.MSP_SET_HEAD, data)
 	#end def setHeading
+
+	def setAccCalibration(self):
+		self._sendCommand(self.MSPCOMMMANDS.MSP_ACC_CALIBRATION)
+	#end def setAccCalibration
+
+	def setMagCalibration(self):
+		self._sendCommand(self.MSPCOMMMANDS.MSP_MAG_CALIBRATION)
+	#end def setMagCalibration
+
+	def setMisc(self, powerTrigger, minThrottle, failsafeThrottle, magDeclination, vBatScale, vBatWarn1, vBatWarn2, vBatCrit):
+		data = bytearray()
+		r = self._fromUInt16(powerTrigger)
+		data.append(r[0]);data.append(r[1])
+		r = self._fromUInt16(minThrottle)
+		data.append(r[0]);data.append(r[1])
+		#maxthrottle not used, padding added
+		data.append(0);data.append(0)
+		#mincommand not used, padding added
+		data.append(0);data.append(0)
+		r = self._fromUInt16(failsafeThrottle)
+		data.append(r[0]);data.append(r[1])
+		#armedtime not used, padding added
+		data.append(0);data.append(0)
+		#uptime not used, padding added
+		data.append(0);data.append(0);data.append(0);data.append(0)
+		r = self._fromUInt16(magDeclination)
+		data.append(r[0]);data.append(r[1])
+		data.append(vBatScale and 0xff)
+		data.append(vBatWarn1 and 0xff)
+		data.append(vBatWarn2 and 0xff)
+		data.append(vBatCrit and 0xff)
+
+
+	#end def setMisc
 
 # connection methods #################################################################################
 	def disconnect(self):

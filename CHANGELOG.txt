@@ -32,3 +32,11 @@ v0.0.4
 	ADD getStatus: get general flight controller status information
 v0.0.5
 	FIX doesn't try to join with the serial monitor thread if it is not running (that is, if the port open failed)
+v0.0.6
+	ADD getMotors: returns current motor signal value (not necessarily actual motor speed)
+	ADD getBoxnames: returns the BOX names from the flight controller (separated by ';')
+	ADD getModeRanges: returns enable range and aux channel for each flight mode
+	ADD setAccCalibration: calibrates accelerometer (make sure the copter is on a flat, level surface!)
+	ADD setMagCalibration: calibrates the magnetrometer
+	ADD getMisc: returns miscellaneous data
+	ADD setMisc: sets miscellaneous data
