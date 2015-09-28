@@ -34,7 +34,7 @@ class MultiWii(object):
 		be changed in the future to something more useful (decimal degrees probably).
 	"""
 
-	__VERSION__ = "0.0.10"
+	__VERSION__ = "0.0.11"
 	__AUTHOR__ = "Jonathan Dean (ke4ukz@gmx.com)"
 	#Instance variables:
 	#	_port: serial.Serial object
@@ -271,7 +271,7 @@ class MultiWii(object):
 		try:
 			self._port.write(output)
 			self._responses.update({command: self._MSPResponse()})
-		except:
+		except Exception:
 			return False
 		return True
 	#end def _sendCommand
@@ -280,7 +280,7 @@ class MultiWii(object):
 		if (self._responses.has_key(command)):
 			startTime = time()
 			while True:
-				if (self._responses[command].finished == True):
+				if self._responses[command].finished:
 					return True
 				if (time() - startTime > self.responseTimeout):
 					return False
@@ -301,7 +301,7 @@ class MultiWii(object):
 		if self._sendAndWait(command):
 			rdata = self._responses[command].data
 			del self._responses[command]
-			if (not expectedSize is None):
+			if (expectedSize is not None):
 				if (len(rdata) == expectedSize):
 					return rdata
 				else:
