@@ -46,3 +46,5 @@ v0.0.8
 	FIX spelling of "MSPCOMMANDS" (was MSPCOMMMANDS)
 	FIX enum classes are now all private (didn't need to be exposed outside of the class)
 	DEL	MSPModeRanges enum class; wasn't needed
+v0.0.9
+	FIX get* commands now use an intermediate _sendAndGet method to prevent excessive copy-and-paste programming

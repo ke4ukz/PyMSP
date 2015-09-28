@@ -295,6 +295,23 @@ class MultiWii(object):
 			return False
 	#end def _sendAndWait
 
+	def _sendAndGet(self, command, expectedSize=None):
+		if self._sendAndWait(command):
+			rdata = self._responses[command].data
+			del self._responses[command]
+			if (not expectedSize is None):
+				if (len(rdata) == expectedSize):
+					return rdata
+				else:
+					return None
+			else:
+				return rdata
+			#end if
+		else:
+			return None
+		#end if
+	#end def _sendAndGet
+
 # get* methods #################################################################################
 	def getIdent(self):
 		"""Get identifying information from the device
@@ -309,12 +326,10 @@ class MultiWii(object):
 		"""
 		mspVersion = 0
 		quadType = 0
-		if (self._sendAndWait(self._MSPCOMMANDS.MSP_IDENT)):
-			rdata = self._responses[self._MSPCOMMANDS.MSP_IDENT].data
-			if (len(rdata) == 7):
-				mspVersion = rdata[0]
-				quadType = rdata[1]
-			del self._responses[self._MSPCOMMANDS.MSP_IDENT]
+		rdata = self._sendAndGet(self._MSPCOMMANDS.MSP_IDENT, 7)
+		if rdata:
+			mspVersion = rdata[0]
+			quadType = rdata[1]
 		#end if
 		return {"version":mspVersion, "type":quadType}
 	#end def getIdent
@@ -333,14 +348,11 @@ class MultiWii(object):
 		angx = 0
 		angy = 0
 		heading = 0
-		if (self._sendAndWait(self._MSPCOMMANDS.MSP_ATTITUDE)):
-			rdata = self._responses[self._MSPCOMMANDS.MSP_ATTITUDE].data
-			if (len(rdata) == 6):
-				angx = self._toInt16(rdata[0:2])
-				angy = self._toInt16(rdata[2:4])
-				heading = self._toInt16(rdata[4:6])
-			#end if
-			del self._responses[self._MSPCOMMANDS.MSP_ATTITUDE]
+		rdata = self._sendAndGet(self._MSPCOMMANDS.MSP_ATTITUDE, 6)
+		if rdata:
+			angx = self._toInt16(rdata[0:2])
+			angy = self._toInt16(rdata[2:4])
+			heading = self._toInt16(rdata[4:6])
 		#end if
 		return {"angx":angx, "angy":angy, "heading":heading}
 	#end def getAttitude
@@ -366,20 +378,17 @@ class MultiWii(object):
 		acc = [0,0,0]
 		gyr = [0,0,0]
 		mag = [0,0,0]
-		if (self._sendAndWait(self._MSPCOMMANDS.MSP_RAW_IMU)):
-			rdata = self._responses[self._MSPCOMMANDS.MSP_RAW_IMU].data
-			if (len(rdata) == 18):
-				acc[0] = self._toInt16(rdata[0:2])
-				acc[1] = self._toInt16(rdata[2:4])
-				acc[2] = self._toInt16(rdata[4:6])
-				gyr[0] = self._toInt16(rdata[6:8])
-				gyr[1] = self._toInt16(rdata[8:10])
-				gyr[2] = self._toInt16(rdata[10:12])
-				mag[0] = self._toInt16(rdata[12:14])
-				mag[1] = self._toInt16(rdata[14:16])
-				mag[2] = self._toInt16(rdata[16:18])
-			#end if
-			del self._responses[self._MSPCOMMANDS.MSP_RAW_IMU]
+		rdata = self._sendAndGet(self._MSPCOMMANDS.MSP_RAW_IMU, 18)
+		if rdata:
+			acc[0] = self._toInt16(rdata[0:2])
+			acc[1] = self._toInt16(rdata[2:4])
+			acc[2] = self._toInt16(rdata[4:6])
+			gyr[0] = self._toInt16(rdata[6:8])
+			gyr[1] = self._toInt16(rdata[8:10])
+			gyr[2] = self._toInt16(rdata[10:12])
+			mag[0] = self._toInt16(rdata[12:14])
+			mag[1] = self._toInt16(rdata[14:16])
+			mag[2] = self._toInt16(rdata[16:18])
 		#end if
 		return {"accx":acc[0], "accy":acc[1], "accz":acc[2],
 				"gyrx":gyr[0], "gyry":gyr[1], "gyrz":gyr[2],
@@ -410,8 +419,8 @@ class MultiWii(object):
 		yaw = 0
 		throttle = 0
 		aux = [0,0,0,0]
-		if (self._sendAndWait(self._MSPCOMMANDS.MSP_RC)):
-			rdata = self._responses[self._MSPCOMMANDS.MSP_RC].data
+		rdata = self._sendAndGet(self._MSPCOMMANDS.MSP_RC)
+		if rdata:
 			if (len(rdata) >= 8):
 				pitch = self._toUInt16(rdata[0:2])
 				roll = self._toUInt16(rdata[2:4])
@@ -422,7 +431,6 @@ class MultiWii(object):
 						aux[i] = self._toUInt16(rdata[8+2*i:10+2*i])
 				#end for
 			#end if
-			del self._responses[self._MSPCOMMANDS.MSP_RC]
 		#end if
 		return {"pitch":pitch, "roll":roll, "yaw":yaw, "throttle":throttle,
 				"aux1":aux[0], "aux2":aux[1], "aux3":aux[2], "aux4":aux[3]}
@@ -444,15 +452,12 @@ class MultiWii(object):
 		pms = 0
 		rssi = 0
 		amperage = 0
-		if (self._sendAndWait(self._MSPCOMMANDS.MSP_ANALOG)):
-			rdata = self._responses[self._MSPCOMMANDS.MSP_ANALOG].data
-			if (len(rdata) == 7):
-				vbat = rdata[0]
-				pms = self._toUInt16(rdata[1:3])
-				rssp = self._toUInt16(rdata[3:5])
-				amperage = self._toUInt16(rdata[5:7])
-			#end if
-			del self._responses[self._MSPCOMMANDS.MSP_ANALOG]
+		rdata = self._sendAndGet(self._MSPCOMMANDS.MSP_ANALOG, 7)
+		if rdata:
+			vbat = rdata[0]
+			pms = self._toUInt16(rdata[1:3])
+			rssp = self._toUInt16(rdata[3:5])
+			amperage = self._toUInt16(rdata[5:7])
 		#end if
 		return {"vbat":vbat, "powermetersum":pms, "rssi":rssi, "amperage":amperage}
 	#end def getAnalog
@@ -469,13 +474,10 @@ class MultiWii(object):
 		"""
 		alt = 0
 		vari = 0
-		if (self._sendAndWait(self._MSPCOMMANDS.MSP_ALTITUDE)):
-			rdata = self._responses[self._MSPCOMMANDS.MSP_ALTITUDE].data
-			if (len(rdata) == 6):
-				alt = self._toInt32(rdata[0:4])
-				vari = self._toInt16(rdata[4:6])
-			#end if
-			del self._responses[self._MSPCOMMANDS.MSP_ALTITUDE]
+		rdata = self._sendAndGet(self._MSPCOMMANDS.MSP_ALTITUDE, 6)
+		if rdata:
+			alt = self._toInt32(rdata[0:4])
+			vari = self._toInt16(rdata[4:6])
 		#end if
 		return {"altitude":alt, "vari":vari}
 	#end def getAltitude
@@ -502,18 +504,15 @@ class MultiWii(object):
 		gpsAltitude = 0
 		gpsSpeed = 0
 		gpsCourse = 0
-		if (self._sendAndWait(self._MSPCOMMANDS.MSP_RAW_GPS)):
-			rdata = self._responses[self._MSPCOMMANDS.MSP_RAW_GPS].data
-			if (len(rdata) == 16):
-				gpsFix = True if (rdata[0] == 1) else False
-				gpsNumSat = rdata[1]
-				gpsLat = self._toUInt32(rdata[2:6])
-				gpsLong = self._toUInt32(rdata[6:10])
-				gpsAltitude = self._toUInt16(rdata[10:12])
-				gpsSpeed = self._toUInt16(rdata[12:14])
-				gpsCourse = self._toUInt16(rdata[14:16])
-			#end if
-			del self._responses[self._MSPCOMMANDS.MSP_RAW_GPS]
+		rdata = self._sendAndGet(self._MSPCOMMANDS.MSP_RAW_GPS, 16)
+		if rdata:
+			gpsFix = True if (rdata[0] == 1) else False
+			gpsNumSat = rdata[1]
+			gpsLat = self._toUInt32(rdata[2:6])
+			gpsLong = self._toUInt32(rdata[6:10])
+			gpsAltitude = self._toUInt16(rdata[10:12])
+			gpsSpeed = self._toUInt16(rdata[12:14])
+			gpsCourse = self._toUInt16(rdata[14:16])
 		#end if
 		return {"fix":gpsFix, "numsat":gpsNumSat, "latitude":gpsLat, "longitude":gpsLong,
 				"altitude":gpsAltitude, "speed":gpsSpeed, "course":gpsCourse}
@@ -537,16 +536,13 @@ class MultiWii(object):
 		sensor=0
 		flag=0
 		currentset=0
-		if (self._sendAndWait(self._MSPCOMMANDS.MSP_STATUS)):
-			rdata = self._responses[self._MSPCOMMANDS.MSP_STATUS].data
-			if (len(rdata) == 11):
-				cycletime = self._toUInt16(rdata[0:2])
-				i2cerrorcount = self._toUInt16(rdata[2:4])
-				sensor = self._toUInt16(rdata[4:6])
-				flag = self._toUInt32(rdata[6:10])
-				currentset = rdata[10]
-			#end if
-			del self._responses[self._MSPCOMMANDS.MSP_STATUS]
+		rdata = self._sendAndGet(self._MSPCOMMANDS.MSP_STATUS, 11)
+		if rdata:
+			cycletime = self._toUInt16(rdata[0:2])
+			i2cerrorcount = self._toUInt16(rdata[2:4])
+			sensor = self._toUInt16(rdata[4:6])
+			flag = self._toUInt32(rdata[6:10])
+			currentset = rdata[10]
 		#end if
 		return {"cycletime":cycletime, "i2cerrorcount":i2cerrorcount, "sensor":sensor, "flag":flag, "currentset":currentset}
 	#end def getStatus
@@ -571,14 +567,11 @@ class MultiWii(object):
 			motor speeds. Motors that are not installed will have a value of zero.
 		"""
 		motors = [0,0,0,0,0,0,0,0]
-		if (self._sendAndWait(self._MSPCOMMANDS.MSP_MOTOR)):
-			rdata = self._responses[self._MSPCOMMANDS.MSP_MOTOR].data
-			if (len(rdata) == 16):
-				for i in range(0,7):
-					motors[i] = self._toUInt16(rdata[2*i:2*i+2])
-				#end for
-			#end if
-			del self._responses[self._MSPCOMMANDS.MSP_MOTOR]
+		rdata = self._sendAndGet(self._MSPCOMMANDS.MSP_MOTOR, 16)
+		if rdata:
+			for i in range(0,7):
+				motors[i] = self._toUInt16(rdata[2*i:2*i+2])
+			#end for
 		#end if
 		ret = {}
 		for i in range(0,7):
@@ -599,10 +592,9 @@ class MultiWii(object):
 		"boxnames" is a string list of the names, separated by ';'.
 		"""
 		boxNames = ""
-		if (self._sendAndWait(self._MSPCOMMANDS.MSP_MOTOR)):
-			rdata = self._responses[self._MSPCOMMANDS.MSP_MOTOR].data
+		rdata = self._sendAndGet(self._MSPCOMMANDS.MSP_BOXNAMES)
+		if rdata:
 			boxNames = "".join(map(chr, rdata))
-			del self._responses[self._MSPCOMMANDS.MSP_MOTOR]
 		#end if
 		return {"boxnames": boxNames}
 	#end def getBoxnames
@@ -766,8 +758,8 @@ class MultiWii(object):
 		for i in range(0, len(self.MODERANGENAMES)):
 			ret.update({self.MODERANGENAMES[i]: {"channel":0, "start":0, "end":0}})
 		#end for
-		if (self._sendAndWait(self._MSPCOMMANDS.MSP_MODE_RANGES)):
-			rdata = self._responses[self._MSPCOMMANDS.MSP_MODE_RANGES].data
+		rdata = self._sendAndGet(self._MSPCOMMANDS.MSP_MODE_RANGES)
+		if rdata:
 			for i in range(0, len(rdata), 4):
 				curID = rdata[i]
 				auxChannel = rdata[i+1]
@@ -775,7 +767,6 @@ class MultiWii(object):
 				rEnd = 900 + 25 * rdata[i+3]
 				ret.update({self.MSPModeRanges[curID]: {"channel":auxChannel, "start":rStart, "end":rEnd}})
 			#end for
-			del self._responses[self._MSPCOMMANDS.MSP_MODE_RANGES]
 		#end if
 		return ret
 	#end def getModeRanges
@@ -812,23 +803,20 @@ class MultiWii(object):
 		vBatWarn1 = 0
 		vBatWarn2 = 0
 		vBatCrit = 0
-		if (self._sendAndWait(self._MSPCOMMANDS.MSP_MOTOR)):
-			rdata = self._responses[self._MSPCOMMANDS.MSP_MOTOR].data
-			if len(rdata) == 22:
-				powerTrigger = self._toUInt16(rdata[0:2])
-				minThrottle = self._toUInt16(rdata[2:4])
-				maxThrottle = self._toUInt16(rdata[4:6])
-				minCommand = self._toUInt16(rdata[6:8])
-				failsafeThrottle = self._toUInt16(rdata[8:10])
-				armTime = self._toUInt16(rdata[10:12])
-				lifeTime = self._toUInt32(rdata[12:16])
-				magDeclination = self._toUInt16(rdata[16:18])
-				vBatScale = rdata[18]
-				vBatWarn1 = rdata[19]
-				vBatWarn2 = rdata[20]
-				vBatCrit = rdata[21]
-			#end if
-			del self._responses[self._MSPCOMMANDS.MSP_MOTOR]
+		rdata = self._sendAndGet(self._MSPCOMMANDS.MSP_MISC, 22)
+		if rdata:
+			powerTrigger = self._toUInt16(rdata[0:2])
+			minThrottle = self._toUInt16(rdata[2:4])
+			maxThrottle = self._toUInt16(rdata[4:6])
+			minCommand = self._toUInt16(rdata[6:8])
+			failsafeThrottle = self._toUInt16(rdata[8:10])
+			armTime = self._toUInt16(rdata[10:12])
+			lifeTime = self._toUInt32(rdata[12:16])
+			magDeclination = self._toUInt16(rdata[16:18])
+			vBatScale = rdata[18]
+			vBatWarn1 = rdata[19]
+			vBatWarn2 = rdata[20]
+			vBatCrit = rdata[21]
 		#end if
 		return {"powertrigger":powerTrigger, "minthrottle":minThrottle, "maxthrottle":maxThrottle, "mincommand":minCommand,
 				"failsafethrottle":failsafeThrottle, "armedtime":armTime, "uptime":lifeTime, "magdeclination":magDeclination,
@@ -846,6 +834,11 @@ class MultiWii(object):
 
 		Returns:
 			bool: True if successful, False otherwise
+
+		Notes:
+			This method does not get the current values for any channel before setting them.
+			If you want to change a couple of values and keep the rest the same, call getRC()
+			first, modify the values it returns, and pass that to setRC.
 		"""
 		data = bytearray()
 		throttle = 0
