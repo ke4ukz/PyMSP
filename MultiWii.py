@@ -33,7 +33,7 @@ class MultiWii(object):
 		be changed in the future to something more useful (decimal degrees probably).
 	"""
 
-	__VERSION__ = "0.0.13"
+	__VERSION__ = "0.0.14"
 	__AUTHOR__ = "Jonathan Dean (ke4ukz@gmx.com)"
 	#Instance variables:
 	#	_port: serial.Serial object
@@ -238,7 +238,7 @@ class MultiWii(object):
 		if (self._responses.has_key(command)):
 			self._responses[command].data = data
 			self._responses[command].finished = True
-			self.commandRecceived(command, data)
+			self.commandRecceived(command, data) #Call the subclass method
 			return True
 		else:
 			return False
@@ -361,19 +361,20 @@ class MultiWii(object):
 		Returns:
 			dict
 			{
-				"angx": (int)
-				"angy": (int)
-				"heading": (int)
+				"angx": (float) - roll attitude (degrees from level), right is positive (-180 to +180)
+				"angy": (float) - pitch attitude (degrees from level), down is positive (-90 to +90)
+				"heading": (int) - yaw attitude (degrees from original heading), right is positive
 			}
+			All units are in degrees
 		"""
 		angx = 0
 		angy = 0
 		heading = 0
 		rdata = self._sendAndGet(self._MSPCOMMANDS.MSP_ATTITUDE, 6)
 		if rdata:
-			angx = self._toInt16(rdata[0:2])
-			angy = self._toInt16(rdata[2:4])
-			heading = self._toInt16(rdata[4:6])
+			angx = self._toInt16(rdata[0:2]) / 10.0
+			angy = self._toInt16(rdata[2:4]) / 10.0
+			heading = self._toInt16(rdata[4:6]) - 180
 		#end if
 		return {"angx":angx, "angy":angy, "heading":heading}
 	#end def getAttitude
@@ -891,7 +892,8 @@ class MultiWii(object):
 		rdata = self._sendAndGet(self._MSPCOMMANDS.MSP_SERVO, 16)
 		if rdata:
 			for i in range(0, 8):
-				servos[i] = self._toUInt16(rdata[2*i, 2*i+2])
+				print type(i)
+				servos[i] = self._toUInt16(rdata[2*i:2*i+2])
 			#end for
 		#end if
 		ret = {}

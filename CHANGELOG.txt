@@ -57,3 +57,6 @@ v0.0.12
 	FIX made MODERANGENAMES non-public (didn't need to be exposed outside of the class)
 v0.0.13
 	ADD commandReceived method for subclasses
+v0.0.14
+	FIX attitude now reports in degrees for all three axes, heading is +/- 180
+	FIX getServos bytearray slice
