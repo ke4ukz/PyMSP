@@ -1,22 +1,47 @@
-﻿from serial import Serial
+﻿#Python MultiWii Serial Protocol communication library for radio-controlled devices
+#Copyright (C) 2015 Jonathan Dean
+#This program is free software: you can redistribute it and/or modify
+#it under the terms of the GNU General Public License as published by
+#the Free Software Foundation, either version 3 of the License, or
+#(at your option) any later version.
+
+#This program is distributed in the hope that it will be useful,
+#but WITHOUT ANY WARRANTY; without even the implied warranty of
+#MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#GNU General Public License for more details.
+
+#You should have received a copy of the GNU General Public License
+#along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+from serial import Serial
 from threading import Thread, Event
 from time import sleep, time
 import struct
 
 class MultiWii(object):
-	__VERSION__ = "0.0.6"
+	"""Connect to and communicate with an RC device using the MultiWii Serial Protocol
+	
+	Attributes:
+		responseTimeout (int): Number of seconds to wait for a response to a command
+			before giving up. Defaults to 3.
+		MULTITYPENAMES (dict): String representation of each device type
+		MODERANGENAMES (dict): String representation of each mode range used by CleanFlight
+	"""
+
+	__VERSION__ = "0.0.7"
 	__AUTHOR__ = "Jonathan Dean (ke4ukz@gmx.com)"
 	#Instance variables:
 	#	_port: serial.Serial object
 	#	_monitorThread: threading.Thread object that monitors the incoming serial data
 	#	_exitNow: threading.Event object that is set when the thread should exit
-	#	responses: dict of {command: MSPResponse} used to store responses
+	#	_responses: dict of {command: _MSPResponse} used to store responses
 	#	responseTimeout: number of seconds to wait for a response to a command (defaults to 3)
 
 	MULTITYPENAMES = {0:"Unknown", 1:"TRI", 2:"QUADP", 3:"QUADX", 4:"BI", 5:"GIMBAL", 6:"Y6", 7:"HEX6", 8:"FLYING_WING", 9:"Y4", 10:"HEX6X", 11:"OCTOX8", 12:"OCTOFLATX", 13:"OCTOFLATP", 14:"AIRPLANE", 15:"HELI_120_CCPM", 16:"HELI_90_DEG", 17:"VTAIL4", 18:"HEX6H", 19:"PPM_TO_SERVO", 20:"DUALCOPTER", 21:"SINGLECOPTER"}
 	MODERANGENAMES = {0:"ARM", 1:"ANGLE", 2:"HORIZON", 3:"BARO", 4:"Reserved", 5:"MAG", 6:"HEADFREE", 7:"HEADADJ", 8:"CAMSTAB", 9:"CAMTRIG", 10:"GPSHOME", 11:"GPSHOLD", 12:"PASSTHRU", 13:"BEEPERON", 14:"LEDMAX", 15:"LEDLOW", 16:"LLIGHTS", 17:"CALIB", 18:"GOV", 19:"OSD", 20:"TELEMETRY", 21:"AUTOTUNE", 22:"SONAR"}
 
 	class MSPCOMMMANDS:
+		"""Enum of MSP commands"""
 		MSP_NULL = 0
 		MSP_MODE_RANGES = 34
 		MSP_SET_MODE_RANGE = 35
@@ -42,23 +67,26 @@ class MultiWii(object):
 		MSP_SET_HEAD = 211
 	#end class MSPCOMMANDS
 
-	class MSPSTATES:
+	class _MSPSTATES:
+		"""Enum of MSP States"""
 		IDLE = 0
 		HEADER_START = 1
 		HEADER_M = 2
 		HEADER_ARROW = 3
 		HEADER_SIZE = 4
 		HEADER_CMD = 5
-	#end class MSPSTATES
+	#end class _MSPSTATES
 
-	class MSPResponse:
+	class _MSPResponse:
+		"""Combine MSP response data and finished communication flag"""
 		def __init__(self):
 			self.finished = False
 			self.data = []
 		#end def __init__
-	#end class MSPResponse
+	#end class _MSPResponse
 
 	class MSPModeRanges:
+		"""Enum of MSP Mode ranges (used by CleanFlight)"""
 		ARM = 0 #Enables motors and flight stabilisation
 		ANGLE = 1 #Legacy auto-level flight mode
 		HORIZON = 2 #Auto-level flight mode
@@ -88,7 +116,7 @@ class MultiWii(object):
 		self._port = Serial()
 		self._monitorThread = Thread(target=self._monitorSerialPort)
 		self._exitNow = Event()
-		self.responses = {}
+		self._responses = {}
 		self.responseTimeout = 3
 	#end def __init__
 
@@ -98,7 +126,44 @@ class MultiWii(object):
 		elif self._port.isOpen():
 			self._port.close()
 
+# connection methods #################################################################################
+	def disconnect(self):
+		"""Disconnect from a MultiWii RC device"""
+		if self._monitorThread.isAlive():
+			self._exitNow.set()
+			self._monitorThread.join()
+	#end def disconnect
+
+	def connect(self, portName, baudRate):
+		"""Connect to a MultiWii RC device
+
+		Args:
+			portName (str): The serial port name to use for the connection (e.g., "COM3" in Windows or "/dev/ttyUSB0", "/dev/TTYAMA0", etc. in Linux)
+			baudRate (int): The communications speed (generally 115200 for CleanFlight)
+
+		Returns:
+			bool: True if successful, False otherwise
+		"""
+		try:
+			self._port.setPort(portName)
+			self._port.setBaudrate(baudRate)
+			self._port.open()
+		except Exception as ex:
+			print("Error opening serial port: " + str(ex))
+			return False
+		#end try
+		try:
+			self._monitorThread.start()
+			return True
+		except Exception as ex:
+			print("Error starting thread: " + str(ex))
+			return False
+		#end try
+	#end def connect
+
 # Byte<->Int functions #################################################################################
+#	These methods convert integers to bytearrays and vice versa
+#	All integers are assumed to be in the correct range, and and overflowing data will cause an exception
 	def _toInt16(self, data):
 		if (len(data) == 2):
 			return struct.unpack("@h", struct.pack("<BB", data[0], data[1]))[0]
@@ -145,7 +210,7 @@ class MultiWii(object):
 
 # command processing methods #################################################################################
 	def _monitorSerialPort(self):
-		state = self.MSPSTATES.IDLE
+		state = self._MSPSTATES.IDLE
 		data = bytearray()
 		dataSize = 0
 		dataChecksum = 0
@@ -153,32 +218,32 @@ class MultiWii(object):
 		while (not self._exitNow.isSet()):
 			if (self._port.inWaiting() > 0):
 				inByte = ord(self._port.read())
-				if (state == self.MSPSTATES.IDLE):
-					state = self.MSPSTATES.HEADER_START if (inByte==36) else self.MSPSTATES.IDLE #chr(36)=='$'
-				elif (state == self.MSPSTATES.HEADER_START):
-					state = self.MSPSTATES.HEADER_M if (inByte==77) else self.MSPSTATES.IDLE #chr(77)=='M'
-				elif (state == self.MSPSTATES.HEADER_M):
-					state = self.MSPSTATES.HEADER_ARROW if (inByte==62) else self.MSPSTATES.IDLE #chr(62)=='>'
-				elif (state == self.MSPSTATES.HEADER_ARROW):
+				if (state == self._MSPSTATES.IDLE):
+					state = self._MSPSTATES.HEADER_START if (inByte==36) else self._MSPSTATES.IDLE #chr(36)=='$'
+				elif (state == self._MSPSTATES.HEADER_START):
+					state = self._MSPSTATES.HEADER_M if (inByte==77) else self._MSPSTATES.IDLE #chr(77)=='M'
+				elif (state == self._MSPSTATES.HEADER_M):
+					state = self._MSPSTATES.HEADER_ARROW if (inByte==62) else self._MSPSTATES.IDLE #chr(62)=='>'
+				elif (state == self._MSPSTATES.HEADER_ARROW):
 					dataSize = inByte
 					data = bytearray()
 					dataChecksum = inByte
-					state = self.MSPSTATES.HEADER_SIZE
-				elif (state == self.MSPSTATES.HEADER_SIZE):
+					state = self._MSPSTATES.HEADER_SIZE
+				elif (state == self._MSPSTATES.HEADER_SIZE):
 					command = inByte
 					dataChecksum = (dataChecksum ^ inByte)
-					state = self.MSPSTATES.HEADER_CMD
-				elif (state == self.MSPSTATES.HEADER_CMD) and (len(data) < dataSize):
+					state = self._MSPSTATES.HEADER_CMD
+				elif (state == self._MSPSTATES.HEADER_CMD) and (len(data) < dataSize):
 					data.append(inByte)
 					dataChecksum = (dataChecksum ^ inByte)
-				elif (state == self.MSPSTATES.HEADER_CMD) and (len(data) >= dataSize):
+				elif (state == self._MSPSTATES.HEADER_CMD) and (len(data) >= dataSize):
 					if (dataChecksum == inByte):
 						#Good command, do something with it
 						self._processCommand(command, data)
 					else:
 						#Bad checksum
 						pass
-					state = self.MSPSTATES.IDLE
+					state = self._MSPSTATES.IDLE
 					#end if
 				#end if
 			else:
@@ -189,9 +254,9 @@ class MultiWii(object):
 	#end def _monitorSerialPort
 
 	def _processCommand(self, command, data):
-		if (self.responses.has_key(command)):
-			self.responses[command].data = data
-			self.responses[command].finished = True
+		if (self._responses.has_key(command)):
+			self._responses[command].data = data
+			self._responses[command].finished = True
 			return True
 		else:
 			return False
@@ -223,17 +288,17 @@ class MultiWii(object):
 		output.append(checksum)
 		try:
 			self._port.write(output)
-			self.responses.update({command: self.MSPResponse()})
+			self._responses.update({command: self._MSPResponse()})
 		except:
 			return False
 		return True
 	#end def _sendCommand
 
 	def _waitForResponse(self, command):
-		if (self.responses.has_key(command)):
+		if (self._responses.has_key(command)):
 			startTime = time()
 			while True:
-				if (self.responses[command].finished == True):
+				if (self._responses[command].finished == True):
 					return True
 				if (time() - startTime > self.responseTimeout):
 					return False
@@ -252,40 +317,77 @@ class MultiWii(object):
 
 # get* methods #################################################################################
 	def getIdent(self):
+		"""Get identifying information from the device
+
+		Returns:
+			dict:
+				{
+					"version": (int)
+					"type": (int)
+				}
+			See MULTITYPENAMES for a string representation of 'type'
+		"""
 		mspVersion = 0
 		quadType = 0
 		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_IDENT)):
-			rdata = self.responses[self.MSPCOMMMANDS.MSP_IDENT].data
+			rdata = self._responses[self.MSPCOMMMANDS.MSP_IDENT].data
 			if (len(rdata) == 7):
 				mspVersion = rdata[0]
 				quadType = rdata[1]
-			del self.responses[self.MSPCOMMMANDS.MSP_IDENT]
+			del self._responses[self.MSPCOMMMANDS.MSP_IDENT]
 		#end if
 		return {"version":mspVersion, "type":quadType}
 	#end def getIdent
 	
 	def getAttitude(self):
+		"""Get attitude (orientation) data from the device
+
+		Returns:
+			dict
+			{
+				"angx": (int)
+				"angy": (int)
+				"heading": (int)
+			}
+		"""
 		angx = 0
 		angy = 0
 		heading = 0
 		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_ATTITUDE)):
-			rdata = self.responses[self.MSPCOMMMANDS.MSP_ATTITUDE].data
+			rdata = self._responses[self.MSPCOMMMANDS.MSP_ATTITUDE].data
 			if (len(rdata) == 6):
 				angx = self._toInt16(rdata[0:2])
 				angy = self._toInt16(rdata[2:4])
 				heading = self._toInt16(rdata[4:6])
 			#end if
-			del self.responses[self.MSPCOMMMANDS.MSP_ATTITUDE]
+			del self._responses[self.MSPCOMMMANDS.MSP_ATTITUDE]
 		#end if
 		return {"angx":angx, "angy":angy, "heading":heading}
 	#end def getAttitude
 
 	def getIMU(self):
+		"""Get raw IMU data from the device
+
+		Returns:
+			dict
+			{
+				"accx": (int)
+				"accy": (int)
+				"accz": (int)
+				"gyrx": (int)
+				"gyry": (int)
+				"gyrz": (int)
+				"magx": (int)
+				"magy": (int)
+				"magz": (int)
+			}
+			Values depend on the sensor that is installed, and will be zero for any sensor that is not available
+		"""
 		acc = [0,0,0]
 		gyr = [0,0,0]
 		mag = [0,0,0]
 		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_RAW_IMU)):
-			rdata = self.responses[self.MSPCOMMMANDS.MSP_RAW_IMU].data
+			rdata = self._responses[self.MSPCOMMMANDS.MSP_RAW_IMU].data
 			if (len(rdata) == 18):
 				acc[0] = self._toInt16(rdata[0:2])
 				acc[1] = self._toInt16(rdata[2:4])
@@ -297,7 +399,7 @@ class MultiWii(object):
 				mag[1] = self._toInt16(rdata[14:16])
 				mag[2] = self._toInt16(rdata[16:18])
 			#end if
-			del self.responses[self.MSPCOMMMANDS.MSP_RAW_IMU]
+			del self._responses[self.MSPCOMMMANDS.MSP_RAW_IMU]
 		#end if
 		return {"accx":acc[0], "accy":acc[1], "accz":acc[2],
 				"gyrx":gyr[0], "gyry":gyr[1], "gyrz":gyr[2],
@@ -305,13 +407,31 @@ class MultiWii(object):
 	#end def getIMU
 
 	def getRC(self):
+		"""Get current RC data from the device
+
+		Returns:
+			dict
+			{
+				"pitch": (int)
+				"roll": (int)
+				"yaw": (int)
+				"throttle": (int)
+				"aux1": (int)
+				"aux2": (int)
+				"aux3": (int)
+				"aux4": (int)
+			}
+
+		Note: These are the PWM values being used to compute the signal to be sent to the motor. In CleanFlight,
+			they should be between 1000 and 2000.
+		"""
 		pitch = 0
 		roll = 0
 		yaw = 0
 		throttle = 0
 		aux = [0,0,0,0]
 		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_RC)):
-			rdata = self.responses[self.MSPCOMMMANDS.MSP_RC].data
+			rdata = self._responses[self.MSPCOMMMANDS.MSP_RC].data
 			if (len(rdata) >= 8):
 				pitch = self._toUInt16(rdata[0:2])
 				roll = self._toUInt16(rdata[2:4])
@@ -322,46 +442,80 @@ class MultiWii(object):
 						aux[i] = self._toUInt16(rdata[8+2*i:10+2*i])
 				#end for
 			#end if
-			del self.responses[self.MSPCOMMMANDS.MSP_RC]
+			del self._responses[self.MSPCOMMMANDS.MSP_RC]
 		#end if
 		return {"pitch":pitch, "roll":roll, "yaw":yaw, "throttle":throttle,
 				"aux1":aux[0], "aux2":aux[1], "aux3":aux[2], "aux4":aux[3]}
 	#end def getRC
 
 	def getAnalog(self):
+		"""Get analog sensor data from the device
+
+		Returns:
+			dict
+			{
+				"vbat": (int)
+				"powermetersum": (int)
+				"rssi": (int)
+				"amperage": (int)
+			}
+		"""
 		vbat = 0
 		pms = 0
 		rssi = 0
 		amperage = 0
 		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_ANALOG)):
-			rdata = self.responses[self.MSPCOMMMANDS.MSP_ANALOG].data
+			rdata = self._responses[self.MSPCOMMMANDS.MSP_ANALOG].data
 			if (len(rdata) == 7):
 				vbat = rdata[0]
 				pms = self._toUInt16(rdata[1:3])
 				rssp = self._toUInt16(rdata[3:5])
 				amperage = self._toUInt16(rdata[5:7])
 			#end if
-			del self.responses[self.MSPCOMMMANDS.MSP_ANALOG]
+			del self._responses[self.MSPCOMMMANDS.MSP_ANALOG]
 		#end if
 		return {"vbat":vbat, "powermetersum":pms, "rssi":rssi, "amperage":amperage}
 	#end def getAnalog
 
 	def getAltitude(self):
+		"""Get current altitude of device
+
+		Returns:
+			dict
+			{
+				"altitude": (int)
+				"vari": (int)
+			}
+		"""
 		alt = 0
 		vari = 0
 		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_ALTITUDE)):
-			rdata = self.responses[self.MSPCOMMMANDS.MSP_ALTITUDE].data
+			rdata = self._responses[self.MSPCOMMMANDS.MSP_ALTITUDE].data
 			if (len(rdata) == 6):
 				alt = self._toInt32(rdata[0:4])
 				vari = self._toInt16(rdata[4:6])
 			#end if
-			del self.responses[self.MSPCOMMMANDS.MSP_ALTITUDE]
+			del self._responses[self.MSPCOMMMANDS.MSP_ALTITUDE]
 		#end if
 		return {"altitude":alt, "vari":vari}
 	#end def getAltitude
 
 	def getGPS(self):
-		gpsFix = 0
+		"""Get GPS coordinate and fix data from the device
+
+		Returns:
+			dict
+			{
+				"fix": (bool)
+				"numsat": (int)
+				"latitude": (int)
+				"longitude": (int)
+				"altitude": (int)
+				"speed": (int)
+				"course": (int)
+			}
+		"""
+		gpsFix = False
 		gpsNumSat = 0
 		gpsLat = 0
 		gpsLong = 0
@@ -369,9 +523,9 @@ class MultiWii(object):
 		gpsSpeed = 0
 		gpsCourse = 0
 		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_RAW_GPS)):
-			rdata = self.responses[self.MSPCOMMMANDS.MSP_RAW_GPS].data
+			rdata = self._responses[self.MSPCOMMMANDS.MSP_RAW_GPS].data
 			if (len(rdata) == 16):
-				gpsFix = rdata[0]
+				gpsFix = True if (rdata[0] == 1) else False
 				gpsNumSat = rdata[1]
 				gpsLat = self._toUInt32(rdata[2:6])
 				gpsLong = self._toUInt32(rdata[6:10])
@@ -379,20 +533,32 @@ class MultiWii(object):
 				gpsSpeed = self._toUInt16(rdata[12:14])
 				gpsCourse = self._toUInt16(rdata[14:16])
 			#end if
-			del self.responses[self.MSPCOMMMANDS.MSP_RAW_GPS]
+			del self._responses[self.MSPCOMMMANDS.MSP_RAW_GPS]
 		#end if
 		return {"fix":gpsFix, "numsat":gpsNumSat, "latitude":gpsLat, "longitude":gpsLong,
 				"altitude":gpsAltitude, "speed":gpsSpeed, "course":gpsCourse}
 	#end def getGPS
 
 	def getStatus(self):
+		"""Get status of the device
+
+		Returns:
+			dict
+			{
+				"cycletime": (int)
+				"i2cerrorcount": (int)
+				"sensor": (int)
+				"flag": (int)
+				"currentset": (int)
+			}
+		"""
 		cycletime=0
 		i2cerrorcount=0
 		sensor=0
 		flag=0
 		currentset=0
 		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_STATUS)):
-			rdata = self.responses[self.MSPCOMMMANDS.MSP_STATUS].data
+			rdata = self._responses[self.MSPCOMMMANDS.MSP_STATUS].data
 			if (len(rdata) == 11):
 				cycletime = self._toUInt16(rdata[0:2])
 				i2cerrorcount = self._toUInt16(rdata[2:4])
@@ -400,21 +566,39 @@ class MultiWii(object):
 				flag = self._toUInt32(rdata[6:10])
 				currentset = rdata[10]
 			#end if
-			del self.responses[self.MSPCOMMMANDS.MSP_STATUS]
+			del self._responses[self.MSPCOMMMANDS.MSP_STATUS]
 		#end if
 		return {"cycletime":cycletime, "i2cerrorcount":i2cerrorcount, "sensor":sensor, "flag":flag, "currentset":currentset}
 	#end def getStatus
 
 	def getMotors(self):
+		"""Get current motor signal values from the device
+
+		Returns:
+			dict
+			{
+				"motor1": (int)
+				"motor2": (int)
+				"motor3": (int)
+				"motor4": (int)
+				"motor5": (int)
+				"motor6": (int)
+				"motor7": (int)
+				"motor8": (int)
+			}
+		
+		Note: These are the PWM values being sent to the ESCs by the flight controller, not the actual
+			motor speeds. Motors that are not installed will have a value of zero.
+		"""
 		motors = [0,0,0,0,0,0,0,0]
 		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_MOTOR)):
-			rdata = self.responses[self.MSPCOMMMANDS.MSP_MOTOR].data
+			rdata = self._responses[self.MSPCOMMMANDS.MSP_MOTOR].data
 			if (len(rdata) == 16):
 				for i in range(0,7):
 					motors[i] = self._toUInt16(rdata[2*i:2*i+2])
 				#end for
 			#end if
-			del self.responses[self.MSPCOMMMANDS.MSP_MOTOR]
+			del self._responses[self.MSPCOMMMANDS.MSP_MOTOR]
 		#end if
 		ret = {}
 		for i in range(0,7):
@@ -424,16 +608,175 @@ class MultiWii(object):
 	#end def getMotors
 
 	def getBoxnames(self):
+		"""Get the BOX name strings from the device
+
+		Returns:
+			dict
+			{
+				"boxnames": (str)
+			}
+
+		"boxnames" is a string list of the names, separated by ';'.
+		"""
 		boxNames = ""
 		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_MOTOR)):
-			rdata = self.responses[self.MSPCOMMMANDS.MSP_MOTOR].data
+			rdata = self._responses[self.MSPCOMMMANDS.MSP_MOTOR].data
 			boxNames = "".join(map(chr, rdata))
-			del self.responses[self.MSPCOMMMANDS.MSP_MOTOR]
+			del self._responses[self.MSPCOMMMANDS.MSP_MOTOR]
 		#end if
 		return {"boxnames": boxNames}
 	#end def getBoxnames
 
 	def getModeRanges(self):
+		"""Get mode ranges and channels from the device
+
+		Returns:
+			dict of dict (first dict has one entry for each item in MODERANGENAMES, second dict contains channel,
+			range start, and range end)
+			{
+				"ARM":
+					{
+						"channel": (int)
+						"start": (int)
+						"end": (int)
+					}
+				"ANGLE":
+					{
+						"channel": (int)
+						"start": (int)
+						"end": (int)
+					}
+				"HORIZON":
+					{
+						"channel": (int)
+						"start": (int)
+						"end": (int)
+					}
+				"BARO":
+					{
+						"channel": (int)
+						"start": (int)
+						"end": (int)
+					}
+				"Reserved":
+					{
+						"channel": (int)
+						"start": (int)
+						"end": (int)
+					}
+				"MAG":
+					{
+						"channel": (int)
+						"start": (int)
+						"end": (int)
+					}
+				"HEADFREE":
+					{
+						"channel": (int)
+						"start": (int)
+						"end": (int)
+					}
+				"HEADADJ":
+					{
+						"channel": (int)
+						"start": (int)
+						"end": (int)
+					}
+				"CAMSTAB":
+					{
+						"channel": (int)
+						"start": (int)
+						"end": (int)
+					}
+				"CAMTRIG":
+					{
+						"channel": (int)
+						"start": (int)
+						"end": (int)
+					}
+				"GPSHOME":
+					{
+						"channel": (int)
+						"start": (int)
+						"end": (int)
+					}
+				"GPSHOLD":
+					{
+						"channel": (int)
+						"start": (int)
+						"end": (int)
+					}
+				"PASSTHRU":
+					{
+						"channel": (int)
+						"start": (int)
+						"end": (int)
+					}
+				"BEEPERON":
+					{
+						"channel": (int)
+						"start": (int)
+						"end": (int)
+					}
+				"LEDMAX":
+					{
+						"channel": (int)
+						"start": (int)
+						"end": (int)
+					}
+				"LEDLOW":
+					{
+						"channel": (int)
+						"start": (int)
+						"end": (int)
+					}
+				"LLIGHTS":
+					{
+						"channel": (int)
+						"start": (int)
+						"end": (int)
+					}
+				"CALIB":
+					{
+						"channel": (int)
+						"start": (int)
+						"end": (int)
+					}
+				"GOV":
+					{
+						"channel": (int)
+						"start": (int)
+						"end": (int)
+					}
+				"OSD":
+					{
+						"channel": (int)
+						"start": (int)
+						"end": (int)
+					}
+				"TELEMETRY":
+					{
+						"channel": (int)
+						"start": (int)
+						"end": (int)
+					}
+				"AUTOTUNE":
+					{
+						"channel": (int)
+						"start": (int)
+						"end": (int)
+					}
+				"SONAR":
+					{
+						"channel": (int)
+						"start": (int)
+						"end": (int)
+					}
+			}
+
+			Note: These ranges are an extension to MSP only used by CleanFlight as a replacement for BOX values.
+				See http://shipow.github.io/cleanflight-web/docs/api/msp_extensions/ for more information.
+		"""
 		curID = 0
 		auxChannel = 0
 		rStart = 0
@@ -444,7 +787,7 @@ class MultiWii(object):
 			ret.update({self.MODERANGENAMES[i]: {"channel":0, "start":0, "end":0}})
 		#end for
 		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_MODE_RANGES)):
-			rdata = self.responses[self.MSPCOMMMANDS.MSP_MODE_RANGES].data
+			rdata = self._responses[self.MSPCOMMMANDS.MSP_MODE_RANGES].data
 			for i in range(0, len(rdata), 4):
 				curID = rdata[i]
 				auxChannel = rdata[i+1]
@@ -452,12 +795,31 @@ class MultiWii(object):
 				rEnd = 900 + 25 * rdata[i+3]
 				ret.update({self.MSPModeRanges[curID]: {"channel":auxChannel, "start":rStart, "end":rEnd}})
 			#end for
-			del self.responses[self.MSPCOMMMANDS.MSP_MODE_RANGES]
+			del self._responses[self.MSPCOMMMANDS.MSP_MODE_RANGES]
 		#end if
 		return ret
 	#end def getModeRanges
 
 	def getMisc(self):
+		"""Get miscellaneous data from the device
+
+		Returns:
+			dict:
+			{
+				"powertrigger": (int)
+				"minthrottle": (int)
+				"maxthrottle": (int)
+				"mincommand": (int)
+				"failsafethrottle": (int)
+				"armedtime": (int)
+				"uptime": (int)
+				"magdeclination": (int)
+				"vbatscale": (int)
+				"vbatwarn1": (int)
+				"vbatwarn2": (int)
+				"vbatcrit": (int)
+			}
+		"""
 		powerTrigger = 0
 		minThrottle = 0
 		maxThrottle = 0
@@ -471,7 +833,7 @@ class MultiWii(object):
 		vBatWarn2 = 0
 		vBatCrit = 0
 		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_MOTOR)):
-			rdata = self.responses[self.MSPCOMMMANDS.MSP_MOTOR].data
+			rdata = self._responses[self.MSPCOMMMANDS.MSP_MOTOR].data
 			if len(rdata) == 22:
 				powerTrigger = self._toUInt16(rdata[0:2])
 				minThrottle = self._toUInt16(rdata[2:4])
@@ -486,7 +848,7 @@ class MultiWii(object):
 				vBatWarn2 = rdata[20]
 				vBatCrit = rdata[21]
 			#end if
-			del self.responses[self.MSPCOMMMANDS.MSP_MOTOR]
+			del self._responses[self.MSPCOMMMANDS.MSP_MOTOR]
 		#end if
 		return {"powertrigger":powerTrigger, "minthrottle":minThrottle, "maxthrottle":maxThrottle, "mincommand":minCommand,
 				"failsafethrottle":failsafeThrottle, "armedtime":armTime, "uptime":lifeTime, "magdeclination":magDeclination,
@@ -495,6 +857,16 @@ class MultiWii(object):
 	
 # set* methods #################################################################################
 	def setRC(self, values):
+		"""Sends new RC values to the device.
+
+		Args:
+			values (dict): New RC values, containing values for one or more of the RC channels.
+				Available channels are: "pitch", "yaw", "roll", "throttle", "aux1", "aux2",
+				"aux3", and "aux4". Values not specified will be assumed to be zero.
+
+		Returns:
+			bool: True if successful, False otherwise
+		"""
 		data = bytearray()
 		throttle = 0
 		pitch = 0
@@ -537,36 +909,101 @@ class MultiWii(object):
 	#end def setRC
 
 	def setThrottle(self, value):
+		"""Set throttle to a new value.
+
+		Args:
+			value (int): The new throttle value
+
+		Returns:
+			bool: True if successful, False otherwise
+		"""
 		rc = self.getRC()
 		rc["throttle"] = value
-		self.setRC(rc)
+		return self.setRC(rc)
 	#end def setThrottle
 
 	def setAux(self, channel, value):
+		"""Set specified aux channel to a new value.
+
+		Args:
+			channel (int): The channel to set (1 to 4)
+			value (int): The new throttle value
+
+		Returns:
+			bool: True if successful, False otherwise
+		"""
 		if channel in range(1,4):
 			rc = self.getRC()
 			rc["aux" + str(channel)] = value
-			self.setRC(rc)
+			return self.setRC(rc)
+		else:
+			return False
 		#end if
 	#def setAux
 
 	def setHeading(self, value):
+		"""Set a new heading to follow.
+
+		Args:
+			value (int): The new heading
+
+		Returns:
+			bool: True if successful, False otherwise
+		"""
 		data = bytearray()
 		r = self._fromInt16(value)
 		data.append(r[0])
 		data.append(r[1])
-		self._sendAndWait(self.MSPCOMMMANDS.MSP_SET_HEAD, data)
+		return self._sendAndWait(self.MSPCOMMMANDS.MSP_SET_HEAD, data)
 	#end def setHeading
 
 	def setAccCalibration(self):
-		self._sendCommand(self.MSPCOMMMANDS.MSP_ACC_CALIBRATION)
+		"""Calibrate the device's accelerometer.
+
+		Args:
+			None
+
+		Returns:
+			True if successful, False otherwise
+
+		Notes:
+			Make sure the device is on a flat, level surface when performing calibration
+		"""
+		return self._sendAndWait(self.MSPCOMMMANDS.MSP_ACC_CALIBRATION)
 	#end def setAccCalibration
 
 	def setMagCalibration(self):
-		self._sendCommand(self.MSPCOMMMANDS.MSP_MAG_CALIBRATION)
+		"""Calibrate the device's magnetrometer.
+
+		Args:
+			None
+
+		Returns:
+			True if successful, False otherwise
+
+		Notes:
+			Make sure the device is on a flat, level surface when performing calibration
+		"""
+
+		return self._sendAndWait(self.MSPCOMMMANDS.MSP_MAG_CALIBRATION)
 	#end def setMagCalibration
 
 	def setMisc(self, powerTrigger, minThrottle, failsafeThrottle, magDeclination, vBatScale, vBatWarn1, vBatWarn2, vBatCrit):
+		"""Set miscellaneous device data.
+
+		Args:
+			powerTrigger (int): Don't know what this does
+			minthrottle (int): Don't know what this does either
+			failsafeThrottle (int): Throttle level when failsafe mode is activated
+			magDeclination (int): variation between magnetic north and true north
+			vBatScale (int): Scale used for battery voltage monitoring
+			vBatWarn1 (int): First battery level warning threshold
+			vBatWarn2 (int): Second battery level warning threshold
+			vBatCrit (int): Critical battery level threshold
+
+		Returns:
+			bool: True on success, False otherwise
+		"""
 		data = bytearray()
 		r = self._fromUInt16(powerTrigger)
 		data.append(r[0]);data.append(r[1])
@@ -588,31 +1025,5 @@ class MultiWii(object):
 		data.append(vBatWarn1 and 0xff)
 		data.append(vBatWarn2 and 0xff)
 		data.append(vBatCrit and 0xff)
-
-
+		return self._sendAndWait(self.MSPCOMMMANDS.MSP_SET_MISC, data)
 	#end def setMisc
-
-# connection methods #################################################################################
-	def disconnect(self):
-		if self._monitorThread.isAlive():
-			self._exitNow.set()
-			self._monitorThread.join()
-	#end def disconnect
-
-	def connect(self, portName, baudRate):
-		try:
-			self._port.setPort(portName)
-			self._port.setBaudrate(baudRate)
-			self._port.open()
-		except Exception as ex:
-			print("Error opening serial port: " + str(ex))
-			return False
-		#end try
-		try:
-			self._monitorThread.start()
-			return True
-		except Exception as ex:
-			print("Error starting thread: " + str(ex))
-			return False
-		#end try
-	#end def connect
