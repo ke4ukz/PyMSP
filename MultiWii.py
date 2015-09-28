@@ -33,7 +33,7 @@ class MultiWii(object):
 		be changed in the future to something more useful (decimal degrees probably).
 	"""
 
-	__VERSION__ = "0.0.12"
+	__VERSION__ = "0.0.13"
 	__AUTHOR__ = "Jonathan Dean (ke4ukz@gmx.com)"
 	#Instance variables:
 	#	_port: serial.Serial object
@@ -238,6 +238,7 @@ class MultiWii(object):
 		if (self._responses.has_key(command)):
 			self._responses[command].data = data
 			self._responses[command].finished = True
+			self.commandRecceived(command, data)
 			return True
 		else:
 			return False
@@ -312,6 +313,25 @@ class MultiWii(object):
 			return None
 		#end if
 	#end def _sendAndGet
+
+	def commandRecceived(self, command, data, error=False):
+		"""Process a received command from the device
+
+		Args:
+			command (int): the MSP command number
+			data (bytearray): the data associated with the command
+			error (bool): True if the command is reporting an error, False normally
+
+		Returns:
+			None
+
+		Notes:
+			This method is intended for subclasses of MultiWii to be able to monitor and
+			process incoming data from the device.
+
+		"""
+		pass
+	#end def commandReceived
 
 # get* methods #################################################################################
 	def getIdent(self):
