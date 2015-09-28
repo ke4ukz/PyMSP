@@ -53,3 +53,5 @@ v0.0.10
 	ADD getServos: returns current servo signal value (not necessarily the actual servo position)
 v0.0.11
 	FIX made some changes to comply with PEP0008
+v0.0.12
+	FIX made MODERANGENAMES non-public (didn't need to be exposed outside of the class)

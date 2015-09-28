@@ -25,7 +25,6 @@ class MultiWii(object):
 		responseTimeout (int): Number of seconds to wait for a response to a command
 			before giving up. Defaults to 3.
 		MULTITYPENAMES (dict): String representation of each device type
-		MODERANGENAMES (dict): String representation of each mode range used by CleanFlight
 
 	Notes:
 		Some values may be needed to tested by observing their values to interpret their meaning.
@@ -34,7 +33,7 @@ class MultiWii(object):
 		be changed in the future to something more useful (decimal degrees probably).
 	"""
 
-	__VERSION__ = "0.0.11"
+	__VERSION__ = "0.0.12"
 	__AUTHOR__ = "Jonathan Dean (ke4ukz@gmx.com)"
 	#Instance variables:
 	#	_port: serial.Serial object
@@ -44,7 +43,7 @@ class MultiWii(object):
 	#	responseTimeout: number of seconds to wait for a response to a command (defaults to 3)
 
 	MULTITYPENAMES = {0:"Unknown", 1:"TRI", 2:"QUADP", 3:"QUADX", 4:"BI", 5:"GIMBAL", 6:"Y6", 7:"HEX6", 8:"FLYING_WING", 9:"Y4", 10:"HEX6X", 11:"OCTOX8", 12:"OCTOFLATX", 13:"OCTOFLATP", 14:"AIRPLANE", 15:"HELI_120_CCPM", 16:"HELI_90_DEG", 17:"VTAIL4", 18:"HEX6H", 19:"PPM_TO_SERVO", 20:"DUALCOPTER", 21:"SINGLECOPTER"}
-	MODERANGENAMES = {0:"ARM", 1:"ANGLE", 2:"HORIZON", 3:"BARO", 4:"Reserved", 5:"MAG", 6:"HEADFREE", 7:"HEADADJ", 8:"CAMSTAB", 9:"CAMTRIG", 10:"GPSHOME", 11:"GPSHOLD", 12:"PASSTHRU", 13:"BEEPERON", 14:"LEDMAX", 15:"LEDLOW", 16:"LLIGHTS", 17:"CALIB", 18:"GOV", 19:"OSD", 20:"TELEMETRY", 21:"AUTOTUNE", 22:"SONAR"}
+	_MODERANGENAMES = {0:"ARM", 1:"ANGLE", 2:"HORIZON", 3:"BARO", 4:"Reserved", 5:"MAG", 6:"HEADFREE", 7:"HEADADJ", 8:"CAMSTAB", 9:"CAMTRIG", 10:"GPSHOME", 11:"GPSHOLD", 12:"PASSTHRU", 13:"BEEPERON", 14:"LEDMAX", 15:"LEDLOW", 16:"LLIGHTS", 17:"CALIB", 18:"GOV", 19:"OSD", 20:"TELEMETRY", 21:"AUTOTUNE", 22:"SONAR"}
 
 	class _MSPCOMMANDS:
 		MSP_NULL = 0
@@ -402,6 +401,7 @@ class MultiWii(object):
 
 		Returns:
 			dict
+
 			{
 				"pitch": (int)
 				"roll": (int)
@@ -605,8 +605,7 @@ class MultiWii(object):
 		"""Get mode ranges and channels from the device
 
 		Returns:
-			dict of dict (first dict has one entry for each item in MODERANGENAMES, second dict contains channel,
-			range start, and range end)
+			dict of dict
 			{
 				"ARM":
 					{
@@ -757,8 +756,8 @@ class MultiWii(object):
 		rEnd = 0
 		ret = {}
 		#Fill in default values in case we don't get a response, or in case the response is incomplete
-		for i in range(0, len(self.MODERANGENAMES)):
-			ret.update({self.MODERANGENAMES[i]: {"channel":0, "start":0, "end":0}})
+		for i in range(0, len(self._MODERANGENAMES)):
+			ret.update({self._MODERANGENAMES[i]: {"channel":0, "start":0, "end":0}})
 		#end for
 		rdata = self._sendAndGet(self._MSPCOMMANDS.MSP_MODE_RANGES)
 		if rdata:
