@@ -48,3 +48,6 @@ v0.0.8
 	DEL	MSPModeRanges enum class; wasn't needed
 v0.0.9
 	FIX get* commands now use an intermediate _sendAndGet method to prevent excessive copy-and-paste programming
+v0.0.10
+	ADD getDistanceToHome: returns distance and heading to saved home location
+	ADD getServos: returns current servo signal value (not necessarily the actual servo position)

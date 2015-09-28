@@ -34,7 +34,7 @@ class MultiWii(object):
 		be changed in the future to something more useful (decimal degrees probably).
 	"""
 
-	__VERSION__ = "0.0.8"
+	__VERSION__ = "0.0.10"
 	__AUTHOR__ = "Jonathan Dean (ke4ukz@gmx.com)"
 	#Instance variables:
 	#	_port: serial.Serial object
@@ -55,6 +55,7 @@ class MultiWii(object):
 		MSP_IDENT = 100
 		MSP_STATUS = 101
 		MSP_RAW_IMU = 102
+		MSP_SERVO = 103
 		MSP_MOTOR = 104
 		MSP_RC = 105
 		MSP_RAW_GPS = 106
@@ -105,6 +106,7 @@ class MultiWii(object):
 			self._exitNow.set()
 		elif self._port.isOpen():
 			self._port.close()
+	#end def __del__
 
 # connection methods #################################################################################
 	def disconnect(self):
@@ -823,6 +825,63 @@ class MultiWii(object):
 				"vbatscale":vBatScale, "vbatwarn1":vBatWarn1, "vbatwarn2":vBatWarn2, "vbatcrit":vBatCrit}
 	#end def getMisc
 	
+	def getDistanceToHome(self):
+		"""Get the distance and heading from current position to saved home location.
+
+		Returns:
+			dict
+			{
+				"distance": (int)
+				"heading": (int)
+			}
+
+		Notes:
+			Document says heading is +/- 180 degrees, but data type is UINT16. Need to test this to see what it actually is
+		"""
+		distance = 0
+		heading = 0
+		rdata = self._sendAndGet(self._MSPCOMMANDS.MSP_COMP_GPS, 5)
+		if rdata:
+			distance = self._toUInt16(rdata[0:2])
+			heading = self._toUInt16(rdata[2:4])
+		#end if
+		return {"distance":distance, "heading":heading}
+	#end def getDistanceToHome
+
+	def getServos(self):
+		"""Get current servo signal value from the device
+
+		Returns:
+			dict
+			{
+				"servo1": (int)
+				"servo2": (int)
+				"servo3": (int)
+				"servo4": (int)
+				"servo5": (int)
+				"servo6": (int)
+				"servo7": (int)
+				"servo8": (int)
+			}
+		
+		Note: These are the PWM values being sent to the servos by the flight controller, not the actual
+			servo positions. Servos that are not configured will have a value of zero.
+
+		"""
+		servos = [0,0,0,0,0,0,0,0]
+		rdata = self._sendAndGet(self._MSPCOMMANDS.MSP_SERVO, 16)
+		if rdata:
+			for i in range(0, 8):
+				servos[i] = self._toUInt16(rdata[2*i, 2*i+2])
+			#end for
+		#end if
+		ret = {}
+		for i in range(0, 8):
+			ret.update({"servo" + str(i+1):servos[i]})
+		#end for
+		return ret
+	#end def getServos
+
 # set* methods #################################################################################
 	def setRC(self, values):
 		"""Sends new RC values to the device.
