@@ -40,3 +40,9 @@ v0.0.6
 	ADD setMagCalibration: calibrates the magnetrometer
 	ADD getMisc: returns miscellaneous data
 	ADD setMisc: sets miscellaneous data
+v0.0.7
+	ADD DocStrings to public methods
+v0.0.8
+	FIX spelling of "MSPCOMMANDS" (was MSPCOMMMANDS)
+	FIX enum classes are now all private (didn't need to be exposed outside of the class)
+	DEL	MSPModeRanges enum class; wasn't needed

@@ -26,9 +26,15 @@ class MultiWii(object):
 			before giving up. Defaults to 3.
 		MULTITYPENAMES (dict): String representation of each device type
 		MODERANGENAMES (dict): String representation of each mode range used by CleanFlight
+
+	Notes:
+		Some values may be needed to tested by observing their values to interpret their meaning.
+		Values returned by getIMU depend on the sensor type installed. GPS values currently are
+		the raw data returned by the flight controller (if a GPS receiver is installed), but may
+		be changed in the future to something more useful (decimal degrees probably).
 	"""
 
-	__VERSION__ = "0.0.7"
+	__VERSION__ = "0.0.8"
 	__AUTHOR__ = "Jonathan Dean (ke4ukz@gmx.com)"
 	#Instance variables:
 	#	_port: serial.Serial object
@@ -40,8 +46,7 @@ class MultiWii(object):
 	MULTITYPENAMES = {0:"Unknown", 1:"TRI", 2:"QUADP", 3:"QUADX", 4:"BI", 5:"GIMBAL", 6:"Y6", 7:"HEX6", 8:"FLYING_WING", 9:"Y4", 10:"HEX6X", 11:"OCTOX8", 12:"OCTOFLATX", 13:"OCTOFLATP", 14:"AIRPLANE", 15:"HELI_120_CCPM", 16:"HELI_90_DEG", 17:"VTAIL4", 18:"HEX6H", 19:"PPM_TO_SERVO", 20:"DUALCOPTER", 21:"SINGLECOPTER"}
 	MODERANGENAMES = {0:"ARM", 1:"ANGLE", 2:"HORIZON", 3:"BARO", 4:"Reserved", 5:"MAG", 6:"HEADFREE", 7:"HEADADJ", 8:"CAMSTAB", 9:"CAMTRIG", 10:"GPSHOME", 11:"GPSHOLD", 12:"PASSTHRU", 13:"BEEPERON", 14:"LEDMAX", 15:"LEDLOW", 16:"LLIGHTS", 17:"CALIB", 18:"GOV", 19:"OSD", 20:"TELEMETRY", 21:"AUTOTUNE", 22:"SONAR"}
 
-	class MSPCOMMMANDS:
-		"""Enum of MSP commands"""
+	class _MSPCOMMANDS:
 		MSP_NULL = 0
 		MSP_MODE_RANGES = 34
 		MSP_SET_MODE_RANGE = 35
@@ -53,6 +58,7 @@ class MultiWii(object):
 		MSP_MOTOR = 104
 		MSP_RC = 105
 		MSP_RAW_GPS = 106
+		MSP_COMP_GPS = 107
 		MSP_ATTITUDE = 108
 		MSP_ALTITUDE = 109
 		MSP_ANALOG = 110
@@ -65,7 +71,7 @@ class MultiWii(object):
 		MSP_MAG_CALIBRATION = 206
 		MSP_SET_MISC = 207
 		MSP_SET_HEAD = 211
-	#end class MSPCOMMANDS
+	#end class _MSPCOMMANDS
 
 	class _MSPSTATES:
 		"""Enum of MSP States"""
@@ -84,32 +90,6 @@ class MultiWii(object):
 			self.data = []
 		#end def __init__
 	#end class _MSPResponse
-
-	class MSPModeRanges:
-		"""Enum of MSP Mode ranges (used by CleanFlight)"""
-		ARM = 0 #Enables motors and flight stabilisation
-		ANGLE = 1 #Legacy auto-level flight mode
-		HORIZON = 2 #Auto-level flight mode
-		BARO = 3 #Altitude hold mode (Requires barometer sensor)
-		MAG = 5 #Heading lock
-		HEADFREE = 6 #Head Free - When enabled yaw has no effect on pitch/roll inputs
-		HEADADJ = 7 #Heading Adjust - Sets a new yaw origin for HEADFREE mode
-		CAMSTAB = 8 #Camera Stabilisation
-		CAMTRIG = 9
-		GPSHOME = 10 #Autonomous flight to HOME position
-		GPSHOLD = 11 #Maintain the same longitude/lattitude
-		PASSTHRU = 12 #Pass roll, yaw, and pitch directly from rx to servos in airplane mix
-		BEEPERON = 13 #Enable beeping - useful for locating a crashed aircraft
-		LEDMAX = 14
-		LEDLOW = 15
-		LLIGHTS = 16
-		CALIB = 17
-		GOV = 18
-		OSD = 19 #Enable/Disable On-Screen-Display (OSD)
-		TELEMETRY = 20 #Enable telemetry via switch
-		AUTOTUNE = 21 #Autotune Pitch/Roll PIDs
-		SONAR = 22 #Altitude hold mode (sonar sensor only)
-	#end class MSPModeRanges
 
 # construction/destruction #################################################################################
 	def __init__(self):
@@ -214,7 +194,7 @@ class MultiWii(object):
 		data = bytearray()
 		dataSize = 0
 		dataChecksum = 0
-		command = self.MSPCOMMMANDS.MSP_NULL
+		command = self._MSPCOMMANDS.MSP_NULL
 		while (not self._exitNow.isSet()):
 			if (self._port.inWaiting() > 0):
 				inByte = ord(self._port.read())
@@ -329,12 +309,12 @@ class MultiWii(object):
 		"""
 		mspVersion = 0
 		quadType = 0
-		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_IDENT)):
-			rdata = self._responses[self.MSPCOMMMANDS.MSP_IDENT].data
+		if (self._sendAndWait(self._MSPCOMMANDS.MSP_IDENT)):
+			rdata = self._responses[self._MSPCOMMANDS.MSP_IDENT].data
 			if (len(rdata) == 7):
 				mspVersion = rdata[0]
 				quadType = rdata[1]
-			del self._responses[self.MSPCOMMMANDS.MSP_IDENT]
+			del self._responses[self._MSPCOMMANDS.MSP_IDENT]
 		#end if
 		return {"version":mspVersion, "type":quadType}
 	#end def getIdent
@@ -353,14 +333,14 @@ class MultiWii(object):
 		angx = 0
 		angy = 0
 		heading = 0
-		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_ATTITUDE)):
-			rdata = self._responses[self.MSPCOMMMANDS.MSP_ATTITUDE].data
+		if (self._sendAndWait(self._MSPCOMMANDS.MSP_ATTITUDE)):
+			rdata = self._responses[self._MSPCOMMANDS.MSP_ATTITUDE].data
 			if (len(rdata) == 6):
 				angx = self._toInt16(rdata[0:2])
 				angy = self._toInt16(rdata[2:4])
 				heading = self._toInt16(rdata[4:6])
 			#end if
-			del self._responses[self.MSPCOMMMANDS.MSP_ATTITUDE]
+			del self._responses[self._MSPCOMMANDS.MSP_ATTITUDE]
 		#end if
 		return {"angx":angx, "angy":angy, "heading":heading}
 	#end def getAttitude
@@ -386,8 +366,8 @@ class MultiWii(object):
 		acc = [0,0,0]
 		gyr = [0,0,0]
 		mag = [0,0,0]
-		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_RAW_IMU)):
-			rdata = self._responses[self.MSPCOMMMANDS.MSP_RAW_IMU].data
+		if (self._sendAndWait(self._MSPCOMMANDS.MSP_RAW_IMU)):
+			rdata = self._responses[self._MSPCOMMANDS.MSP_RAW_IMU].data
 			if (len(rdata) == 18):
 				acc[0] = self._toInt16(rdata[0:2])
 				acc[1] = self._toInt16(rdata[2:4])
@@ -399,7 +379,7 @@ class MultiWii(object):
 				mag[1] = self._toInt16(rdata[14:16])
 				mag[2] = self._toInt16(rdata[16:18])
 			#end if
-			del self._responses[self.MSPCOMMMANDS.MSP_RAW_IMU]
+			del self._responses[self._MSPCOMMANDS.MSP_RAW_IMU]
 		#end if
 		return {"accx":acc[0], "accy":acc[1], "accz":acc[2],
 				"gyrx":gyr[0], "gyry":gyr[1], "gyrz":gyr[2],
@@ -430,8 +410,8 @@ class MultiWii(object):
 		yaw = 0
 		throttle = 0
 		aux = [0,0,0,0]
-		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_RC)):
-			rdata = self._responses[self.MSPCOMMMANDS.MSP_RC].data
+		if (self._sendAndWait(self._MSPCOMMANDS.MSP_RC)):
+			rdata = self._responses[self._MSPCOMMANDS.MSP_RC].data
 			if (len(rdata) >= 8):
 				pitch = self._toUInt16(rdata[0:2])
 				roll = self._toUInt16(rdata[2:4])
@@ -442,7 +422,7 @@ class MultiWii(object):
 						aux[i] = self._toUInt16(rdata[8+2*i:10+2*i])
 				#end for
 			#end if
-			del self._responses[self.MSPCOMMMANDS.MSP_RC]
+			del self._responses[self._MSPCOMMANDS.MSP_RC]
 		#end if
 		return {"pitch":pitch, "roll":roll, "yaw":yaw, "throttle":throttle,
 				"aux1":aux[0], "aux2":aux[1], "aux3":aux[2], "aux4":aux[3]}
@@ -464,15 +444,15 @@ class MultiWii(object):
 		pms = 0
 		rssi = 0
 		amperage = 0
-		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_ANALOG)):
-			rdata = self._responses[self.MSPCOMMMANDS.MSP_ANALOG].data
+		if (self._sendAndWait(self._MSPCOMMANDS.MSP_ANALOG)):
+			rdata = self._responses[self._MSPCOMMANDS.MSP_ANALOG].data
 			if (len(rdata) == 7):
 				vbat = rdata[0]
 				pms = self._toUInt16(rdata[1:3])
 				rssp = self._toUInt16(rdata[3:5])
 				amperage = self._toUInt16(rdata[5:7])
 			#end if
-			del self._responses[self.MSPCOMMMANDS.MSP_ANALOG]
+			del self._responses[self._MSPCOMMANDS.MSP_ANALOG]
 		#end if
 		return {"vbat":vbat, "powermetersum":pms, "rssi":rssi, "amperage":amperage}
 	#end def getAnalog
@@ -489,13 +469,13 @@ class MultiWii(object):
 		"""
 		alt = 0
 		vari = 0
-		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_ALTITUDE)):
-			rdata = self._responses[self.MSPCOMMMANDS.MSP_ALTITUDE].data
+		if (self._sendAndWait(self._MSPCOMMANDS.MSP_ALTITUDE)):
+			rdata = self._responses[self._MSPCOMMANDS.MSP_ALTITUDE].data
 			if (len(rdata) == 6):
 				alt = self._toInt32(rdata[0:4])
 				vari = self._toInt16(rdata[4:6])
 			#end if
-			del self._responses[self.MSPCOMMMANDS.MSP_ALTITUDE]
+			del self._responses[self._MSPCOMMANDS.MSP_ALTITUDE]
 		#end if
 		return {"altitude":alt, "vari":vari}
 	#end def getAltitude
@@ -522,8 +502,8 @@ class MultiWii(object):
 		gpsAltitude = 0
 		gpsSpeed = 0
 		gpsCourse = 0
-		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_RAW_GPS)):
-			rdata = self._responses[self.MSPCOMMMANDS.MSP_RAW_GPS].data
+		if (self._sendAndWait(self._MSPCOMMANDS.MSP_RAW_GPS)):
+			rdata = self._responses[self._MSPCOMMANDS.MSP_RAW_GPS].data
 			if (len(rdata) == 16):
 				gpsFix = True if (rdata[0] == 1) else False
 				gpsNumSat = rdata[1]
@@ -533,7 +513,7 @@ class MultiWii(object):
 				gpsSpeed = self._toUInt16(rdata[12:14])
 				gpsCourse = self._toUInt16(rdata[14:16])
 			#end if
-			del self._responses[self.MSPCOMMMANDS.MSP_RAW_GPS]
+			del self._responses[self._MSPCOMMANDS.MSP_RAW_GPS]
 		#end if
 		return {"fix":gpsFix, "numsat":gpsNumSat, "latitude":gpsLat, "longitude":gpsLong,
 				"altitude":gpsAltitude, "speed":gpsSpeed, "course":gpsCourse}
@@ -557,8 +537,8 @@ class MultiWii(object):
 		sensor=0
 		flag=0
 		currentset=0
-		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_STATUS)):
-			rdata = self._responses[self.MSPCOMMMANDS.MSP_STATUS].data
+		if (self._sendAndWait(self._MSPCOMMANDS.MSP_STATUS)):
+			rdata = self._responses[self._MSPCOMMANDS.MSP_STATUS].data
 			if (len(rdata) == 11):
 				cycletime = self._toUInt16(rdata[0:2])
 				i2cerrorcount = self._toUInt16(rdata[2:4])
@@ -566,7 +546,7 @@ class MultiWii(object):
 				flag = self._toUInt32(rdata[6:10])
 				currentset = rdata[10]
 			#end if
-			del self._responses[self.MSPCOMMMANDS.MSP_STATUS]
+			del self._responses[self._MSPCOMMANDS.MSP_STATUS]
 		#end if
 		return {"cycletime":cycletime, "i2cerrorcount":i2cerrorcount, "sensor":sensor, "flag":flag, "currentset":currentset}
 	#end def getStatus
@@ -591,14 +571,14 @@ class MultiWii(object):
 			motor speeds. Motors that are not installed will have a value of zero.
 		"""
 		motors = [0,0,0,0,0,0,0,0]
-		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_MOTOR)):
-			rdata = self._responses[self.MSPCOMMMANDS.MSP_MOTOR].data
+		if (self._sendAndWait(self._MSPCOMMANDS.MSP_MOTOR)):
+			rdata = self._responses[self._MSPCOMMANDS.MSP_MOTOR].data
 			if (len(rdata) == 16):
 				for i in range(0,7):
 					motors[i] = self._toUInt16(rdata[2*i:2*i+2])
 				#end for
 			#end if
-			del self._responses[self.MSPCOMMMANDS.MSP_MOTOR]
+			del self._responses[self._MSPCOMMANDS.MSP_MOTOR]
 		#end if
 		ret = {}
 		for i in range(0,7):
@@ -619,10 +599,10 @@ class MultiWii(object):
 		"boxnames" is a string list of the names, separated by ';'.
 		"""
 		boxNames = ""
-		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_MOTOR)):
-			rdata = self._responses[self.MSPCOMMMANDS.MSP_MOTOR].data
+		if (self._sendAndWait(self._MSPCOMMANDS.MSP_MOTOR)):
+			rdata = self._responses[self._MSPCOMMANDS.MSP_MOTOR].data
 			boxNames = "".join(map(chr, rdata))
-			del self._responses[self.MSPCOMMMANDS.MSP_MOTOR]
+			del self._responses[self._MSPCOMMANDS.MSP_MOTOR]
 		#end if
 		return {"boxnames": boxNames}
 	#end def getBoxnames
@@ -786,8 +766,8 @@ class MultiWii(object):
 		for i in range(0, len(self.MODERANGENAMES)):
 			ret.update({self.MODERANGENAMES[i]: {"channel":0, "start":0, "end":0}})
 		#end for
-		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_MODE_RANGES)):
-			rdata = self._responses[self.MSPCOMMMANDS.MSP_MODE_RANGES].data
+		if (self._sendAndWait(self._MSPCOMMANDS.MSP_MODE_RANGES)):
+			rdata = self._responses[self._MSPCOMMANDS.MSP_MODE_RANGES].data
 			for i in range(0, len(rdata), 4):
 				curID = rdata[i]
 				auxChannel = rdata[i+1]
@@ -795,7 +775,7 @@ class MultiWii(object):
 				rEnd = 900 + 25 * rdata[i+3]
 				ret.update({self.MSPModeRanges[curID]: {"channel":auxChannel, "start":rStart, "end":rEnd}})
 			#end for
-			del self._responses[self.MSPCOMMMANDS.MSP_MODE_RANGES]
+			del self._responses[self._MSPCOMMANDS.MSP_MODE_RANGES]
 		#end if
 		return ret
 	#end def getModeRanges
@@ -832,8 +812,8 @@ class MultiWii(object):
 		vBatWarn1 = 0
 		vBatWarn2 = 0
 		vBatCrit = 0
-		if (self._sendAndWait(self.MSPCOMMMANDS.MSP_MOTOR)):
-			rdata = self._responses[self.MSPCOMMMANDS.MSP_MOTOR].data
+		if (self._sendAndWait(self._MSPCOMMANDS.MSP_MOTOR)):
+			rdata = self._responses[self._MSPCOMMANDS.MSP_MOTOR].data
 			if len(rdata) == 22:
 				powerTrigger = self._toUInt16(rdata[0:2])
 				minThrottle = self._toUInt16(rdata[2:4])
@@ -848,7 +828,7 @@ class MultiWii(object):
 				vBatWarn2 = rdata[20]
 				vBatCrit = rdata[21]
 			#end if
-			del self._responses[self.MSPCOMMMANDS.MSP_MOTOR]
+			del self._responses[self._MSPCOMMANDS.MSP_MOTOR]
 		#end if
 		return {"powertrigger":powerTrigger, "minthrottle":minThrottle, "maxthrottle":maxThrottle, "mincommand":minCommand,
 				"failsafethrottle":failsafeThrottle, "armedtime":armTime, "uptime":lifeTime, "magdeclination":magDeclination,
@@ -903,7 +883,7 @@ class MultiWii(object):
 				data.append(r[0])
 				data.append(r[1])
 			#end for
-			return self._sendAndWait(self.MSPCOMMMANDS.MSP_SET_RAW_RC, data)
+			return self._sendAndWait(self._MSPCOMMANDS.MSP_SET_RAW_RC, data)
 		else:
 			return False
 	#end def setRC
@@ -954,7 +934,7 @@ class MultiWii(object):
 		r = self._fromInt16(value)
 		data.append(r[0])
 		data.append(r[1])
-		return self._sendAndWait(self.MSPCOMMMANDS.MSP_SET_HEAD, data)
+		return self._sendAndWait(self._MSPCOMMANDS.MSP_SET_HEAD, data)
 	#end def setHeading
 
 	def setAccCalibration(self):
@@ -969,7 +949,7 @@ class MultiWii(object):
 		Notes:
 			Make sure the device is on a flat, level surface when performing calibration
 		"""
-		return self._sendAndWait(self.MSPCOMMMANDS.MSP_ACC_CALIBRATION)
+		return self._sendAndWait(self._MSPCOMMANDS.MSP_ACC_CALIBRATION)
 	#end def setAccCalibration
 
 	def setMagCalibration(self):
@@ -985,7 +965,7 @@ class MultiWii(object):
 			Make sure the device is on a flat, level surface when performing calibration
 		"""
 
-		return self._sendAndWait(self.MSPCOMMMANDS.MSP_MAG_CALIBRATION)
+		return self._sendAndWait(self._MSPCOMMANDS.MSP_MAG_CALIBRATION)
 	#end def setMagCalibration
 
 	def setMisc(self, powerTrigger, minThrottle, failsafeThrottle, magDeclination, vBatScale, vBatWarn1, vBatWarn2, vBatCrit):
@@ -1025,5 +1005,5 @@ class MultiWii(object):
 		data.append(vBatWarn1 and 0xff)
 		data.append(vBatWarn2 and 0xff)
 		data.append(vBatCrit and 0xff)
-		return self._sendAndWait(self.MSPCOMMMANDS.MSP_SET_MISC, data)
+		return self._sendAndWait(self._MSPCOMMANDS.MSP_SET_MISC, data)
 	#end def setMisc
